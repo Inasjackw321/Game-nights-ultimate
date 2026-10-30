@@ -9,6 +9,7 @@ const MIN_RANKED_PLAYERS = 3; // games with fewer players don't count globally
 export const CREATURES = ['crab', 'jelly', 'turtle', 'octopus', 'seahorse', 'eel', 'fish', 'squid', 'ray', 'whale'];
 const REACTION_COUNT = 6; // matches REACTIONS in public/app.js
 const REACT_COOLDOWN_MS = 400;
+const MAX_RTC_BYTES = 16 * 1024;
 // Pearls for the room's "tonight" leaderboard: 1st, 2nd, 3rd place.
 const PEARLS = [3, 2, 1];
 
@@ -64,6 +65,16 @@ export class Room extends DurableObject {
     try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object') return;
 
+    // Voice chat set-up messages (WebRTC offers/answers/ICE) are relayed to one
+    // player and never stored. The audio itself goes directly between players.
+    if (msg.type === 'rtc') {
+      const to = String(msg.to ?? '');
+      if (!this.state.players[pid] || !this.state.players[to] || to === pid) return;
+      if (JSON.stringify(msg.data ?? null).length > MAX_RTC_BYTES) return;
+      for (const sock of this.ctx.getWebSockets(to)) this.send(sock, { type: 'rtc', from: pid, data: msg.data });
+      return;
+    }
+
     // Emoji reactions are fire-and-forget: relayed to everyone, never stored.
     if (msg.type === 'react') {
       const r = Number(msg.r);
@@ -87,6 +98,10 @@ export class Room extends DurableObject {
     // The host keeps the role through a refresh; it only moves (lazily) when
     // someone else needs a host action while they're away.
     this.state.lastActive = Date.now();
+    // Last tab closed: they've left voice chat too.
+    const [pid] = this.ctx.getTags(ws);
+    const player = this.state.players[pid];
+    if (player?.voice && !this.ctx.getWebSockets(pid).some((s) => s !== ws && s.readyState === WebSocket.OPEN)) player.voice = false;
     await this.afterChange(ws);
   }
 
@@ -142,6 +157,12 @@ export class Room extends DurableObject {
     }
 
     if (!player) return 'Join the room first.';
+
+    if (msg.type === 'voice') {
+      player.voice = Boolean(msg.on);
+      player.voiceMuted = Boolean(msg.on && msg.muted);
+      return;
+    }
 
     if (msg.type === 'look') {
       if (!CREATURES.includes(msg.look)) return 'Unknown creature.';
@@ -360,6 +381,8 @@ export class Room extends DurableObject {
           look: p.look,
           avatar: p.avatar,
           discord: Boolean(p.userId),
+          voice: Boolean(p.voice && online.has(p.id)),
+          voiceMuted: Boolean(p.voiceMuted),
           connected: online.has(p.id),
           score: p.id in scores ? scores[p.id] : null,
           inGame: Boolean(s.game?.ids.includes(p.id)),

@@ -23,6 +23,20 @@ Casino games use **play chips only**. There is no real money, buying chips, or c
 - **Sign in with Discord** (one click, top right) to appear on the **global leaderboard**. It ranks players by wins, for each game and across all games. A game only counts when it had 3 or more players, so a solo game can't pad your stats.
 - **Tonight's standings** in the room: every finished game awards pearls (3 / 2 / 1 for the top three), so you can crown the overall winner of the night.
 
+## Voice chat
+
+Click **🎙 Join voice chat** under the reef, allow the microphone, and everyone else in voice can hear you. A player's creature glows green while they talk, and 🎧 / 🔇 shows who's in voice and who's muted.
+
+- Audio goes **directly between players' browsers** (WebRTC). The server only passes along the connection set-up, so voice costs nothing to run and is never recorded.
+- Like any peer-to-peer call, players in voice can see each other's IP address, so only join voice with people you know.
+- It works for most home Wi-Fi and phones out of the box. Some strict networks (certain mobile carriers, school or office Wi-Fi) also need a relay ("TURN") server. To add one for free, create a TURN key in the Cloudflare dashboard under **Realtime → TURN Server**, then:
+  ```bash
+  npx wrangler secret put TURN_KEY_ID
+  ```
+  ```bash
+  npx wrangler secret put TURN_KEY_API_TOKEN
+  ```
+
 ## How it's built
 
 All of it runs on the Cloudflare Workers free plan:

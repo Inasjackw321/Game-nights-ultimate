@@ -25,6 +25,8 @@ export default {
 
     if (url.pathname === '/api/catalog') return Response.json(CATALOG);
 
+    if (url.pathname === '/api/ice') return Response.json({ iceServers: await iceServers(env) });
+
     if (url.pathname === '/api/leaderboard') {
       const game = url.searchParams.get('game') ?? 'all';
       return hub(env).fetch(`https://hub/leaderboard?game=${encodeURIComponent(game)}`);
@@ -58,6 +60,29 @@ export default {
     return env.ASSETS.fetch(request);
   },
 };
+
+// STUN lets most players connect directly. Some networks (strict mobile
+// carriers, office/school Wi-Fi) also need a TURN relay: set TURN_KEY_ID and
+// TURN_KEY_API_TOKEN from Cloudflare's Realtime TURN service to enable it.
+const STUN = [{ urls: 'stun:stun.cloudflare.com:3478' }, { urls: 'stun:stun.l.google.com:19302' }];
+
+async function iceServers(env) {
+  if (!env.TURN_KEY_ID || !env.TURN_KEY_API_TOKEN) return STUN;
+  try {
+    const res = await fetch(`https://rtc.live.cloudflare.com/v1/turn/keys/${env.TURN_KEY_ID}/credentials/generate-ice-servers`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.TURN_KEY_API_TOKEN}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ttl: 86400 }),
+    });
+    if (!res.ok) throw new Error(`TURN ${res.status}`);
+    const body = await res.json();
+    const servers = Array.isArray(body.iceServers) ? body.iceServers : [body.iceServers];
+    return [...STUN, ...servers.filter(Boolean)];
+  } catch (err) {
+    console.error('TURN credentials failed, falling back to STUN only', err);
+    return STUN;
+  }
+}
 
 function hub(env) {
   return env.HUB.get(env.HUB.idFromName('global'));

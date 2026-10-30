@@ -5,6 +5,7 @@ import { RENDERERS, FRAMES } from './games.js';
 import { sfx, isMuted, setMuted, isMusicOn, setMusic } from './sfx.js';
 import * as fx from './fx.js';
 import { onState } from './director.js';
+import * as voice from './voice.js';
 
 export const REACTIONS = ['😂', '🔥', '😱', '👏', '💀', '🐟'];
 
@@ -85,7 +86,9 @@ function renderUserChip() {
   if (!me.authEnabled) {
     // Tell whoever runs the site exactly what's missing.
     $('signinHint').innerHTML = `Discord sign-in isn't switched on yet. Missing Worker secret${me.authMissing?.length === 1 ? '' : 's'}: <b>${(me.authMissing ?? []).map(esc).join(', ')}</b>. Add them with <code>npx wrangler secret put …</code> (see README).`;
-    chip.innerHTML = '';
+    // Always show the button so it's findable; until setup is done it explains why it can't work yet.
+    chip.innerHTML = '<button class="pill discord setup" id="loginSetupBtn" type="button">Sign in with Discord</button>';
+    $('loginSetupBtn').onclick = () => toast(`Discord sign-in isn't set up on this server yet. Missing: ${(me.authMissing ?? []).join(', ')}. The site owner adds them with "npx wrangler secret put", then refreshes.`, 9000);
     return;
   }
   $('signinHint').textContent = 'Sign in with Discord to get onto the global leaderboard.';
@@ -129,6 +132,7 @@ function open() {
     retry = 0;
     banner(null);
     send({ type: 'join', name: store.get('gn:name') || me.user?.name || 'Diver' });
+    if (voice.inVoice()) send({ type: 'voice', on: true, muted: voice.isMicMuted() });
   };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
@@ -138,7 +142,11 @@ function open() {
       state = msg;
       catalog = msg.catalog;
       route();
+      voice.sync(state);
+      renderVoiceBar();
       if (location.hash !== '#leaderboard') requestAnimationFrame(() => onState(prev, state));
+    } else if (msg.type === 'rtc') {
+      voice.onSignal(msg.from, msg.data);
     } else if (msg.type === 'react') {
       const pt = fx.seatPoint(msg.pid);
       if (pt && REACTIONS[msg.r]) { fx.reaction(pt.x, pt.y - 20, REACTIONS[msg.r]); sfx.react(msg.r); fx.seatAnim(msg.pid, 'hop'); }
@@ -168,6 +176,7 @@ export function send(msg) {
 }
 
 function leave(message) {
+  voice.leave();
   roomCode = null;
   state = null;
   try { ws?.close(); } catch {}
@@ -304,6 +313,7 @@ function renderSeats(view) {
     }
     const avatar = p.avatar ? `<img src="${esc(p.avatar)}" alt="">` : '';
     const crown = state.phase === 'final' && state.final?.ranking.some((r) => r.id === p.id && r.place === 1) ? '<span class="crown">♛</span>' : '';
+    const vbadge = p.voice ? `<span class="vbadge" title="In voice chat">${p.voiceMuted ? '🔇' : '🎧'}</span>` : '';
 
     let el = existing.get(p.id);
     existing.delete(p.id);
@@ -322,7 +332,7 @@ function renderSeats(view) {
     const src = spriteUrl(p.look, { dim: !p.connected });
     const img = el.querySelector('.creature');
     if (img.getAttribute('src') !== src) img.setAttribute('src', src);
-    setHtml(el.querySelector('.overlay'), crown + tag + mark);
+    setHtml(el.querySelector('.overlay'), crown + tag + mark + vbadge);
     setHtml(el.querySelector('.pname'), avatar + esc(p.name));
     setHtml(el.querySelector('.pstat'), stat);
   });
@@ -501,6 +511,36 @@ function renderSoundButtons() {
 $('muteBtn').onclick = () => { setMuted(!isMuted()); renderSoundButtons(); if (!isMuted()) sfx.ding(); };
 $('musicBtn').onclick = () => { setMusic(!isMusicOn()); renderSoundButtons(); };
 renderSoundButtons();
+
+// ---- voice chat ----------------------------------------------------------------
+
+voice.setup({ sendFn: send, changed: () => renderVoiceBar() });
+
+function renderVoiceBar() {
+  const bar = $('voicebar');
+  if (!state?.joined) { bar.innerHTML = ''; return; }
+  const others = state.players.filter((p) => p.voice && p.id !== state.you).length;
+  if (!voice.inVoice()) {
+    bar.innerHTML = `<button class="btn small go" type="button" data-voice="join">🎙 Join voice chat</button>
+      ${others ? `<span class="tiny muted">${others} in voice</span>` : ''}`;
+    return;
+  }
+  bar.innerHTML = `<button class="btn small ${voice.isMicMuted() ? 'danger' : 'go'}" type="button" data-voice="mute">${voice.isMicMuted() ? '🔇 Mic muted' : '🎙 Mic on'}</button>
+    <button class="btn small" type="button" data-voice="leave">Leave voice</button>
+    <span class="tiny muted">${others ? `Talking with ${voice.connectedCount()}/${others}` : 'Nobody else in voice yet'}</span>`;
+}
+
+$('voicebar').addEventListener('click', async (e) => {
+  const action = e.target.closest('[data-voice]')?.dataset.voice;
+  if (action === 'join') {
+    try { await voice.join(); toast('You\'re in voice chat. Everyone in voice can hear you.'); }
+    catch (err) { toast(err.name === 'NotAllowedError' ? 'Microphone permission was blocked. Allow it in your browser\'s address bar and try again.' : `Couldn't start voice: ${err.message}`, 7000); }
+  }
+  if (action === 'mute') voice.toggleMute();
+  if (action === 'leave') voice.leave();
+  renderVoiceBar();
+});
+setInterval(() => { if (voice.inVoice()) renderVoiceBar(); }, 2000);
 
 let lastReact = 0;
 $('reactions').innerHTML = REACTIONS.map((r, i) => `<button type="button" data-react="${i}" aria-label="React ${r}">${r}</button>`).join('');
