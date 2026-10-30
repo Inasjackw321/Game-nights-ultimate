@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Game Nights Ultimate</title>
+  <meta name="description" content="Live party games for up to 10 friends: word games, bluffing, trivia, guessing and play-chip casino games.">
+  <meta name="theme-color" content="#173e63">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' shape-rendering='crispEdges'%3E%3Crect width='16' height='16' fill='%23173e63'/%3E%3Crect x='3' y='5' width='9' height='7' fill='%233b2f63'/%3E%3Crect x='7' y='1' width='2' height='2' fill='%23fff27a'/%3E%3Crect x='8' y='3' width='1' height='2' fill='%230a1424'/%3E%3Crect x='9' y='7' width='1' height='1' fill='%23fff'/%3E%3Crect x='10' y='10' width='3' height='1' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="crt" aria-hidden="true"></div>
+  <div class="bubbles" aria-hidden="true" id="bubbles"></div>
+
+  <header class="top">
+    <a class="brand" href="./" aria-label="Game Nights Ultimate home">
+      <img class="brand-fish" id="brandFish" alt="">
+      <span>GAME NIGHTS<b>ULTIMATE</b></span>
+    </a>
+    <nav class="top-right">
+      <span class="pill code-pill" id="roomTag" hidden></span>
+      <a class="pill" href="#leaderboard" id="boardLink">Leaderboard</a>
+      <span id="userChip"></span>
+    </nav>
+  </header>
+
+  <div class="banner" id="banner" hidden></div>
+
+  <main id="main">
+    <!-- Home -->
+    <section class="screen" id="screen-home">
+      <div class="home-hero">
+        <div class="hero-scene" id="heroScene"></div>
+        <h1 class="hero-title">Party games under the sea</h1>
+        <p class="hero-sub">Up to 10 friends, one room code, nine games: word games, bluffing, trivia, guessing and play-chip casino games. Nothing to install.</p>
+      </div>
+      <form class="panel stack" id="homeForm" autocomplete="off">
+        <label class="field">
+          <span>Your name</span>
+          <input id="nameInput" maxlength="16" placeholder="e.g. Sam" required>
+        </label>
+        <button class="btn primary wide" type="submit" data-action="create">Create a room</button>
+        <div class="or"><span>or join one</span></div>
+        <div class="row">
+          <input id="codeInput" class="code-input" maxlength="4" placeholder="CODE" aria-label="Room code" autocapitalize="characters">
+          <button class="btn" type="submit" data-action="join">Join</button>
+        </div>
+        <p class="tiny muted" id="signinHint" hidden>Sign in with Discord to get onto the global leaderboard.</p>
+      </form>
+      <div class="game-strip" id="homeGames"></div>
+    </section>
+
+    <!-- Room: the reef stage plus a panel for the current game -->
+    <section class="screen" id="screen-room" hidden>
+      <div class="stage" id="stage">
+        <div class="stage-deco" id="stageDeco"></div>
+        <div class="host-spot">
+          <img class="host-fish" id="hostFish" alt="">
+          <div class="host-shadow"></div>
+          <div class="timer" id="timer" hidden><span id="timerNum"></span><i><b id="timerFill"></b></i></div>
+        </div>
+        <div class="seats" id="seats"></div>
+      </div>
+      <div class="panel game-panel" id="panel"></div>
+    </section>
+
+    <!-- Global leaderboard -->
+    <section class="screen" id="screen-board" hidden>
+      <div class="panel">
+        <div class="panel-head"><h2>Global leaderboard</h2><a class="pill" href="#" id="boardBack">Back</a></div>
+        <p class="muted small">Every game played with 3+ players counts, for anyone signed in with Discord. Ranked by wins.</p>
+        <div class="tabs" id="boardTabs"></div>
+        <div id="boardBody"></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

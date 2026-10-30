@@ -22,7 +22,7 @@ export const PROMPTS = [
     text: 'Name a country in Africa',
     tiers: {
       1: 'egypt; south africa; nigeria; kenya; morocco; ethiopia',
-      2: 'ghana; algeria; tanzania; uganda; libya; tunisia; zimbabwe; somalia; sudan; senegal; democratic republic of the congo|drc|dr congo|congo kinshasa; madagascar; rwanda; cameroon',
+      2: 'ghana; algeria; tanzania; uganda; libya; tunisia; zimbabwe; somalia; sudan; senegal; DR Congo|democratic republic of the congo|drc|dr congo|congo kinshasa; madagascar; rwanda; cameroon',
       3: 'angola; mozambique; namibia; botswana; zambia; mali; ivory coast|cote divoire; niger; chad; south sudan; sierra leone; liberia; malawi; eritrea; mauritius; burkina faso; republic of the congo|congo|congo brazzaville',
       4: 'djibouti; eswatini|swaziland; lesotho; gabon; benin; togo; guinea; guinea bissau; equatorial guinea; gambia; cape verde|cabo verde; comoros; seychelles; sao tome and principe|sao tome; burundi; central african republic; mauritania',
     },
@@ -191,10 +191,10 @@ export const PROMPTS = [
     id: 'car-brand',
     text: 'Name a car brand',
     tiers: {
-      1: 'toyota; ford; honda; bmw; mercedes|mercedes benz|benz; tesla; chevrolet|chevy',
-      2: 'audi; volkswagen|vw; nissan; ferrari; lamborghini; porsche; hyundai; kia; jeep; mazda; subaru; volvo; dodge; jaguar; land rover|range rover; lexus; fiat; mini; peugeot; renault',
-      3: 'bugatti; maserati; bentley; rolls royce; aston martin; mclaren; cadillac; lincoln; buick; gmc; chrysler; ram; mitsubishi; suzuki; infiniti; acura; alfa romeo; skoda; seat; citroen; opel; vauxhall; genesis; lotus; byd; polestar; rivian; dacia; saab; lucid',
-      4: 'koenigsegg; pagani; rimac; lada; tata; mahindra; proton; perodua; holden; pontiac; oldsmobile; plymouth; saturn; hummer; mercury; datsun; triumph; rover; mg; morgan; tvr; caterham; lancia; abarth; cupra; smart; nio; xpeng; geely; chery; great wall; zeekr; maybach; delorean; studebaker; packard; ssangyong|kgm; isuzu; daihatsu; scion; trabant; yugo; vinfast',
+      1: 'toyota; ford; honda; BMW; mercedes|mercedes benz|benz; tesla; chevrolet|chevy',
+      2: 'audi; Volkswagen|vw; nissan; ferrari; lamborghini; porsche; hyundai; kia; jeep; mazda; subaru; volvo; dodge; jaguar; land rover|range rover; lexus; fiat; mini; peugeot; renault',
+      3: 'bugatti; maserati; bentley; rolls royce; aston martin; McLaren|mclaren; cadillac; lincoln; buick; GMC|gmc; chrysler; ram; mitsubishi; suzuki; infiniti; acura; alfa romeo; skoda; seat; citroen; opel; vauxhall; genesis; lotus; BYD|byd; polestar; rivian; dacia; saab; lucid',
+      4: 'koenigsegg; pagani; rimac; lada; tata; mahindra; proton; perodua; holden; pontiac; oldsmobile; plymouth; saturn; hummer; mercury; datsun; triumph; rover; MG|mg; morgan; TVR|tvr; caterham; lancia; abarth; cupra; smart; NIO|nio; xpeng; geely; chery; great wall; zeekr; maybach; DeLorean|delorean; studebaker; packard; SsangYong|ssangyong|kgm; isuzu; daihatsu; scion; trabant; yugo; vinfast',
     },
   },
   {
@@ -213,7 +213,7 @@ export const PROMPTS = [
     tiers: {
       1: 'swimming; athletics|track and field|track; gymnastics; football|soccer; basketball; tennis; boxing',
       2: 'cycling; volleyball; diving; rowing; wrestling; fencing; judo; archery; skiing; figure skating|skating; ice hockey|hockey; field hockey; weightlifting; sailing; equestrian|horse riding|show jumping|dressage; badminton; table tennis|ping pong; golf; rugby|rugby sevens; handball; water polo; snowboarding; marathon; sprinting|100m; high jump; long jump; triathlon; taekwondo; surfing; skateboarding; canoeing|kayaking|canoe|kayak',
-      3: 'curling; bobsleigh|bobsled; luge; skeleton; biathlon; pole vault; javelin; discus; shot put; hammer throw; modern pentathlon|pentathlon; decathlon; heptathlon; artistic swimming|synchronized swimming|synchronised swimming; trampoline; bmx; mountain biking; speed skating; ski jumping; sport climbing|climbing; breaking|breakdancing; shooting; softball; baseball; beach volleyball; karate; hurdles; steeplechase; race walking|racewalking; rhythmic gymnastics',
+      3: 'curling; bobsleigh|bobsled; luge; skeleton; biathlon; pole vault; javelin; discus; shot put; hammer throw; modern pentathlon|pentathlon; decathlon; heptathlon; artistic swimming|synchronized swimming|synchronised swimming; trampoline; BMX|bmx; mountain biking; speed skating; ski jumping; sport climbing|climbing; breaking|breakdancing; shooting; softball; baseball; beach volleyball; karate; hurdles; steeplechase; race walking|racewalking; rhythmic gymnastics',
       4: 'nordic combined; short track; freestyle skiing|moguls; slopestyle; halfpipe; ski cross; snowboard cross; alpine skiing|slalom|giant slalom|downhill|super g; cross country skiing; open water swimming|marathon swimming; keirin; omnium; madison; team pursuit; canoe slalom; trap shooting|skeet; lacrosse; cricket; flag football; squash; tug of war; polo; croquet; jeu de paume; rackets; roque; motorboating; art competitions; plunge for distance; rope climbing; club swinging',
     },
   },

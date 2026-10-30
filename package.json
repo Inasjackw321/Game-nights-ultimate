@@ -1,7 +1,7 @@
 {
-  "name": "deep-cut",
+  "name": "game-nights-ultimate",
   "version": "1.0.0",
-  "description": "Deep Cut: a live party trivia game where rarer answers score more.",
+  "description": "Game Nights Ultimate: live party games for up to 10 friends, on Cloudflare Workers.",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",

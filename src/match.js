@@ -1,15 +1,5 @@
-// Pure game logic: answer normalisation, fuzzy matching and scoring.
-// No Cloudflare APIs in here so it can be unit-tested with plain Node.
-
-export const TIERS = {
-  1: { name: 'Common', points: 100 },
-  2: { name: 'Solid', points: 200 },
-  3: { name: 'Rare', points: 350 },
-  4: { name: 'Deep cut', points: 500 },
-};
-
-// Answers the host approves by hand (not on the list) score as this tier.
-export const APPROVED_TIER = 3;
+// Shared text matching: normalisation, typo-tolerant lookup, clustering.
+// Pure functions only, so it can be unit-tested with plain Node.
 
 // Lowercase, strip accents/punctuation, collapse spaces, drop a leading article.
 export function normalize(text) {
@@ -39,11 +29,7 @@ export function levenshtein(a, b) {
   for (let i = 1; i <= a.length; i++) {
     const cur = [i];
     for (let j = 1; j <= b.length; j++) {
-      cur[j] = Math.min(
-        prev[j] + 1,
-        cur[j - 1] + 1,
-        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
-      );
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
     }
     prev = cur;
   }
@@ -59,8 +45,16 @@ export function maxTypos(key) {
   return 3;
 }
 
-// Prompt pack entries are written as "label|alias|alias; label|alias".
-// Builds { answers: [{id, label, tier}], index: Map<key, answerId> }.
+// True when two free-text answers are the same thing, allowing for typos.
+export function sameAnswer(a, b) {
+  const ka = toKey(a);
+  const kb = toKey(b);
+  if (!ka || !kb) return false;
+  return levenshtein(ka, kb) <= Math.min(maxTypos(ka), maxTypos(kb));
+}
+
+// Answer lists are written as "label|alias|alias; label|alias", grouped by
+// tier. Builds { answers: [{id, label, tier}], index: Map<key, answerId> }.
 export function compilePrompt(prompt) {
   const answers = [];
   const index = new Map();
@@ -82,14 +76,22 @@ export function compilePrompt(prompt) {
   return { ...prompt, answers, index };
 }
 
-function titleCase(s) {
-  return s.replace(/(^|[\s-])(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+const SMALL_WORDS = new Set(['and', 'of', 'the', 'a', 'an', 'in', 'on', 'at', 'to', 'for', 'de', 'la', 'le', 'el', 'du', 'di', 'da', 'n', 'mont']);
+const ROMAN = /^(i|ii|iii|iv|v|vi|vii|viii|ix|x)$/;
+
+// "romeo and juliet" -> "Romeo and Juliet", "henry vi" -> "Henry VI".
+// Labels written with any capitals (e.g. "BMW", "McLaren") are kept as-is.
+export function titleCase(s) {
+  if (s !== s.toLowerCase()) return s;
+  return s.split(' ').map((w, i) => {
+    if (ROMAN.test(w)) return w.toUpperCase();
+    if (i > 0 && SMALL_WORDS.has(w)) return w;
+    return w.replace(/(^|-)(\p{L})/gu, (_, sep, ch) => sep + ch.toUpperCase());
+  }).join(' ');
 }
 
 // Classify one raw answer against a compiled prompt.
-//   { kind: 'blank' }
-//   { kind: 'match', answerId, label, tier }
-//   { kind: 'unknown', key, label }   -> host decides at review time
+//   { kind: 'blank' } | { kind: 'match', answerId, label, tier } | { kind: 'unknown', key, label }
 export function classify(compiled, raw) {
   const key = toKey(raw);
   if (!key) return { kind: 'blank' };
@@ -107,7 +109,7 @@ export function classify(compiled, raw) {
       if (d < best) { best = d; bestIds = new Set([id]); }
       else if (d === best) bestIds.add(id);
     }
-    // Ambiguous typos ("nigera": Niger or Nigeria?) go to the host instead.
+    // Ambiguous typos ("nigera": Niger or Nigeria?) are left unmatched.
     if (best <= limit && bestIds.size === 1) return matchOf(compiled, [...bestIds][0]);
   }
 
@@ -119,12 +121,13 @@ function matchOf(compiled, id) {
   return { kind: 'match', answerId: id, label: a.label, tier: a.tier };
 }
 
-function cleanLabel(raw) {
-  return String(raw).trim().replace(/\s+/g, ' ').slice(0, 40);
+export function cleanLabel(raw, max = 40) {
+  return String(raw ?? '').trim().replace(/\s+/g, ' ').slice(0, max);
 }
 
 // Group unknown answers so that two players typing the same off-list answer
-// (allowing for typos) are reviewed — and scored — as one answer.
+// (allowing for typos) are treated as one answer. Mutates c.key to the
+// cluster's key and returns the clusters.
 export function clusterUnknowns(classified) {
   const clusters = [];
   for (const [playerId, c] of Object.entries(classified)) {
@@ -138,61 +141,6 @@ export function clusterUnknowns(classified) {
     c.key = cluster.key;
   }
   return clusters;
-}
-
-// Points for one group of identical answers. A unique answer scores its full
-// tier value; every extra person who said it splits the value further.
-//   unique deep cut = 500, two people on a deep cut = 250 each,
-//   half of a 10-player room on a common answer = 20 each.
-export function groupPoints(tier, count) {
-  return Math.round(TIERS[tier].points / count);
-}
-
-// Score a round. `classified` maps playerId -> classify() result (after
-// clusterUnknowns has run); `approved` is a Set of unknown keys the host accepted.
-// Returns { groups, misses, deltas } with groups ordered for the reveal:
-// most-shared first, rarest last.
-export function scoreRound(classified, approved) {
-  const groups = new Map();
-  const misses = new Map();
-  const deltas = {};
-
-  for (const [playerId, c] of Object.entries(classified)) {
-    deltas[playerId] = 0;
-    if (c.kind === 'match' || (c.kind === 'unknown' && approved.has(c.key))) {
-      const groupKey = c.kind === 'match' ? `m${c.answerId}` : `u${c.key}`;
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, {
-          label: c.label,
-          tier: c.kind === 'match' ? c.tier : APPROVED_TIER,
-          approved: c.kind === 'unknown',
-          players: [],
-        });
-      }
-      groups.get(groupKey).players.push(playerId);
-    } else {
-      const reason = c.kind === 'blank' ? 'No answer' : 'Not accepted';
-      const missKey = c.kind === 'blank' ? '' : c.key;
-      if (!misses.has(missKey)) misses.set(missKey, { label: c.kind === 'blank' ? '—' : c.label, reason, players: [] });
-      misses.get(missKey).players.push(playerId);
-    }
-  }
-
-  const scored = [...groups.values()].map((g) => {
-    const points = groupPoints(g.tier, g.players.length);
-    for (const p of g.players) deltas[p] = points;
-    return { ...g, count: g.players.length, points, tierName: TIERS[g.tier].name };
-  });
-  scored.sort((a, b) => b.count - a.count || a.points - b.points);
-
-  return { groups: scored, misses: [...misses.values()], deltas };
-}
-
-// A few top-tier answers nobody gave, shown after the reveal.
-export function missedDeepCuts(compiled, classified, n = 3, rand = Math.random) {
-  const given = new Set(Object.values(classified).filter((c) => c.kind === 'match').map((c) => c.answerId));
-  const pool = compiled.answers.filter((a) => a.tier === 4 && !given.has(a.id));
-  return shuffle(pool, rand).slice(0, n).map((a) => a.label);
 }
 
 export function shuffle(list, rand = Math.random) {
