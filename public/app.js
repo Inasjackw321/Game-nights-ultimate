@@ -2,6 +2,11 @@
 // the state it is sent and forwards player actions.
 import { CREATURES, oceanTexture, spriteUrl } from './sprites.js';
 import { RENDERERS, FRAMES } from './games.js';
+import { sfx, isMuted, setMuted, isMusicOn, setMusic } from './sfx.js';
+import * as fx from './fx.js';
+import { onState } from './director.js';
+
+export const REACTIONS = ['😂', '🔥', '😱', '👏', '💀', '🐟'];
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -51,6 +56,22 @@ $('stageDeco').innerHTML = [
 $('heroScene').innerHTML = ['crab', 'jelly', 'octopus', 'host', 'seahorse', 'turtle', 'fish']
   .map((n, i) => `<img src="${spriteUrl(n)}" alt="" style="left:${4 + i * 13.5}%;height:${n === 'host' ? 96 : 52}px;animation-delay:${-i * 0.4}s;bottom:${n === 'host' ? 30 : (i % 2) * 22}px">`).join('');
 
+// Every so often a little fish swims through the reef behind the players.
+setInterval(() => {
+  // Swimmers live in the clipped decoration layer so they never widen the page.
+  const stage = $('stageDeco');
+  if (!stage || $('screen-room').hidden || document.hidden) return;
+  const el = document.createElement('img');
+  const left = Math.random() < 0.5;
+  el.src = spriteUrl(['fish', 'fish', 'ray', 'eel', 'whale', 'jelly'][(Math.random() * 6) | 0]);
+  el.className = `swimmer ${left ? 'left' : ''}`;
+  el.style.top = `${10 + Math.random() * 70}%`;
+  el.style.height = `${14 + Math.random() * 16}px`;
+  el.style.animationDuration = `${12 + Math.random() * 10}s`;
+  stage.prepend(el);
+  setTimeout(() => el.remove(), 23000);
+}, 7000);
+
 // ---- account --------------------------------------------------------------
 
 async function loadMe() {
@@ -60,8 +81,14 @@ async function loadMe() {
 
 function renderUserChip() {
   const chip = $('userChip');
-  $('signinHint').hidden = !me.authEnabled || Boolean(me.user);
-  if (!me.authEnabled) { chip.innerHTML = ''; return; }
+  $('signinHint').hidden = Boolean(me.user);
+  if (!me.authEnabled) {
+    // Tell whoever runs the site exactly what's missing.
+    $('signinHint').innerHTML = `Discord sign-in isn't switched on yet. Missing Worker secret${me.authMissing?.length === 1 ? '' : 's'}: <b>${(me.authMissing ?? []).map(esc).join(', ')}</b>. Add them with <code>npx wrangler secret put …</code> (see README).`;
+    chip.innerHTML = '';
+    return;
+  }
+  $('signinHint').textContent = 'Sign in with Discord to get onto the global leaderboard.';
   if (!me.user) {
     const next = encodeURIComponent(location.pathname + location.search);
     chip.innerHTML = `<a class="pill discord" href="/auth/discord?next=${next}">Sign in with Discord</a>`;
@@ -107,10 +134,19 @@ function open() {
     const msg = JSON.parse(e.data);
     if (msg.type === 'state') {
       clockOffset = msg.now - Date.now();
+      const prev = state;
       state = msg;
       catalog = msg.catalog;
       route();
+      if (location.hash !== '#leaderboard') requestAnimationFrame(() => onState(prev, state));
+    } else if (msg.type === 'react') {
+      const pt = fx.seatPoint(msg.pid);
+      if (pt && REACTIONS[msg.r]) { fx.reaction(pt.x, pt.y - 20, REACTIONS[msg.r]); sfx.react(msg.r); fx.seatAnim(msg.pid, 'hop'); }
     } else if (msg.type === 'error') {
+      sfx.buzz();
+      // Bounced answer: shake the box and select the text so retyping is instant.
+      const input = $('panel').querySelector('input[name=text]');
+      if (input) { input.classList.remove('nope'); void input.offsetWidth; input.classList.add('nope'); input.select(); }
       if (msg.code === 'no_room' || msg.code === 'kicked') {
         fatal = true;
         leave(msg.message);
@@ -202,7 +238,8 @@ const playerById = (id) => state.players.find((p) => p.id === id);
 function renderRoom() {
   const s = state;
   const view = s.game;
-  const key = `${s.phase}:${s.gameId}:${view?.stage}:${view?.round}:${view?.active ?? ''}`;
+  const custom = s.phase === 'playing' && RENDERERS[s.gameId]?.key;
+  const key = custom ? `${s.phase}:${s.gameId}:${custom(view)}` : `${s.phase}:${s.gameId}:${view?.stage}:${view?.round}:${view?.active ?? ''}`;
   const fresh = key !== lastKey;
   lastKey = key;
   renderSeats(view);
@@ -237,7 +274,11 @@ function renderSeats(view) {
   const tags = view?.tags ?? {};
   const hearts = view?.hearts ?? null;
   const night = state.night ?? {};
-  $('seats').innerHTML = players.map((p, i) => {
+  const seats = $('seats');
+  // Seats are kept and updated in place (keyed by player) so creatures keep
+  // bobbing and glide to their new spot instead of everything redrawing.
+  const existing = new Map([...seats.children].map((el) => [el.dataset.id, el]));
+  players.forEach((p, i) => {
     const angle = (-90 + (360 / Math.max(n, 1)) * i) * (Math.PI / 180);
     const x = 50 + 41 * Math.cos(angle);
     const y = 53 + 35 * Math.sin(angle);
@@ -262,22 +303,42 @@ function renderSeats(view) {
       stat = `● ${night[p.id].pearls}`;
     }
     const avatar = p.avatar ? `<img src="${esc(p.avatar)}" alt="">` : '';
-    return `<div class="${classes}" style="left:${x}%;top:${y}%;--delay:${-i * 0.37}s">
-      ${tag}${mark}
-      <img class="creature" src="${spriteUrl(p.look, { dim: !p.connected })}" alt="">
-      <img class="rock" src="${spriteUrl('rock')}" alt="">
-      <span class="pname">${avatar}${esc(p.name)}</span>
-      <span class="pstat">${stat}</span>
-    </div>`;
-  }).join('');
+    const crown = state.phase === 'final' && state.final?.ranking.some((r) => r.id === p.id && r.place === 1) ? '<span class="crown">♛</span>' : '';
+
+    let el = existing.get(p.id);
+    existing.delete(p.id);
+    if (!el) {
+      el = document.createElement('div');
+      el.dataset.id = p.id;
+      el.innerHTML = `<span class="overlay"></span><img class="creature" alt=""><img class="rock" src="${spriteUrl('rock')}" alt=""><span class="pname"></span><span class="pstat"></span>`;
+      el.style.left = `${x}%`;
+      el.style.top = `${y}%`;
+      seats.append(el);
+    }
+    if (el.className !== classes) el.className = classes;
+    el.style.left = `${x}%`;
+    el.style.top = `${y}%`;
+    el.style.setProperty('--delay', `${-i * 0.37}s`);
+    const src = spriteUrl(p.look, { dim: !p.connected });
+    const img = el.querySelector('.creature');
+    if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    setHtml(el.querySelector('.overlay'), crown + tag + mark);
+    setHtml(el.querySelector('.pname'), avatar + esc(p.name));
+    setHtml(el.querySelector('.pstat'), stat);
+  });
+  for (const el of existing.values()) el.remove();
 }
 
-function bubble(title, eyebrow = '') {
-  return `<div class="say"><img src="${spriteUrl('host')}" alt=""><div class="bubble">${eyebrow ? `<span class="eyebrow">${esc(eyebrow)}</span>` : ''}${esc(title)}</div></div>`;
+function setHtml(el, html) {
+  if (el._html !== html) { el.innerHTML = html; el._html = html; }
+}
+
+function bubble(title, eyebrow = '', fresh = false) {
+  return `<div class="say"><img src="${spriteUrl('host')}" alt=""><div class="bubble ${fresh ? 'enter' : ''}">${eyebrow ? `<span class="eyebrow">${esc(eyebrow)}</span>` : ''}${esc(title)}</div></div>`;
 }
 
 function gameCard(g, { selected = false, button = false } = {}) {
-  const icon = { deepcut: 'octopus', hivemind: 'fish', fib: 'squid', blitz: 'eel', likely: 'crab', whoami: 'jelly', blackjack: 'ray', dice: 'turtle', derby: 'seahorse' }[g.id] ?? 'fish';
+  const icon = { deepcut: 'octopus', hivemind: 'fish', fib: 'squid', blitz: 'eel', likely: 'crab', whoami: 'jelly', tycoon: 'whale', blackjack: 'ray', dice: 'turtle', derby: 'seahorse' }[g.id] ?? 'fish';
   const tag = button ? 'button' : 'div';
   const attrs = button ? ` type="button" data-send='${JSON.stringify({ type: 'pick', game: g.id })}'` : '';
   return `<${tag} class="card ${selected ? 'selected' : ''}"${attrs}>
@@ -342,7 +403,7 @@ function finalPanel(h) {
   const line = top.length > 1 ? `It's a tie: ${top.map((r) => r.name).join(' & ')}!` : `${top[0]?.name ?? 'Nobody'} wins ${g.name}!`;
   const extra = RENDERERS[f.gameId]?.summary?.(s.game, h) ?? '';
   return `
-    ${bubble(line, 'Game over')}
+    ${bubble(line, 'Game over', h.fresh)}
     <ol class="board places">${f.ranking.map((r) => `
       <li data-place="${r.place}" class="${r.id === s.you ? 'me' : ''}"><img class="mini" src="${spriteUrl(h.look(r.id))}" alt="">
       <span class="name">${esc(r.name)}</span><span class="score">${s.game?.money ? '◆ ' : ''}${r.score}</span></li>`).join('')}</ol>
@@ -358,37 +419,48 @@ function gamePanel(view, h) {
   const r = RENDERERS[state.gameId];
   const eyebrow = view.total ? `${h.meta.name} · ${Math.min(view.round + 1, view.total)} of ${view.total}` : h.meta.name;
   const spectating = view.canPlay === false ? '<p class="note">You joined mid-game, so you\'re watching this one. You\'ll be in the next game.</p>' : '';
-  return `${bubble(view.title, eyebrow)}${spectating}${r.panel(view, h)}
+  return `${bubble(view.title, eyebrow, h.fresh)}${spectating}${r.panel(view, h)}
     ${h.isHost ? '<div class="end-row"><button class="btn small" data-local="end">End game</button></div>' : ''}`;
 }
 
 // Replace the panel, keeping whatever the player was typing.
 function setPanel(html, fresh) {
-  if (html === lastPanelHtml) return;
+  if (html === lastPanelHtml && !fresh) return;
   lastPanelHtml = html;
   const panel = $('panel');
-  const drafts = {};
-  let focus = null;
-  if (!fresh) {
-    for (const el of panel.querySelectorAll('input[name]:not([type=radio])')) drafts[el.name] = el.value;
-    const a = document.activeElement;
-    if (a?.name && panel.contains(a)) focus = { name: a.name, start: a.selectionStart, end: a.selectionEnd };
-  }
-  const radios = !fresh ? [...panel.querySelectorAll('input[type=radio]:checked')].map((r) => `${r.name}=${r.value}`) : [];
-  panel.innerHTML = html;
-  for (const el of panel.querySelectorAll('input[name]:not([type=radio])')) if (el.name in drafts) el.value = drafts[el.name];
-  for (const rv of radios) {
-    const [n, v] = rv.split('=');
-    const el = panel.querySelector(`input[type=radio][name="${n}"][value="${v}"]`);
-    if (el) el.checked = true;
-  }
-  if (focus) {
-    const el = panel.querySelector(`[name="${focus.name}"]`);
-    el?.focus();
-    try { el?.setSelectionRange(focus.start, focus.end); } catch {}
-  } else if (fresh) {
+  if (fresh) {
+    // New stage: swap the content in with a quick slide.
+    panel.innerHTML = html;
+    panel.classList.remove('enter');
+    void panel.offsetWidth;
+    panel.classList.add('enter');
     panel.querySelector('input[autofocus]')?.focus({ preventScroll: true });
+  } else {
+    // Same stage, small change: patch the DOM so nothing flickers and
+    // whatever the player is typing (and where their cursor is) survives.
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    morph(panel, tpl.content);
   }
+}
+
+function morph(target, source) {
+  const have = [...target.childNodes];
+  const want = [...source.childNodes];
+  want.forEach((node, i) => {
+    const cur = have[i];
+    if (!cur) return target.appendChild(node);
+    if (cur.nodeType !== node.nodeType || cur.nodeName !== node.nodeName) return target.replaceChild(node, cur);
+    if (cur.nodeType === Node.TEXT_NODE) {
+      if (cur.nodeValue !== node.nodeValue) cur.nodeValue = node.nodeValue;
+      return;
+    }
+    if (cur.nodeType !== Node.ELEMENT_NODE) return;
+    for (const { name } of [...cur.attributes]) if (!node.hasAttribute(name)) cur.removeAttribute(name);
+    for (const { name, value } of [...node.attributes]) if (cur.getAttribute(name) !== value) cur.setAttribute(name, value);
+    if (cur.tagName !== 'INPUT' && cur.tagName !== 'TEXTAREA') morph(cur, node);
+  });
+  for (let i = have.length - 1; i >= want.length; i--) target.removeChild(have[i]);
 }
 
 // One delegated handler for every button and form in the panel.
@@ -419,13 +491,47 @@ $('panel').addEventListener('submit', (e) => {
   if (form.dataset.clear !== undefined) form.reset();
 });
 
+// ---- sound toggles, reactions, button clicks -----------------------------------
+
+function renderSoundButtons() {
+  $('muteBtn').textContent = isMuted() ? '🔇 Sound off' : '🔊 Sound on';
+  $('musicBtn').textContent = isMusicOn() ? '♪ Music on' : '♪ Music off';
+  $('musicBtn').classList.toggle('dim', !isMusicOn());
+}
+$('muteBtn').onclick = () => { setMuted(!isMuted()); renderSoundButtons(); if (!isMuted()) sfx.ding(); };
+$('musicBtn').onclick = () => { setMusic(!isMusicOn()); renderSoundButtons(); };
+renderSoundButtons();
+
+let lastReact = 0;
+$('reactions').innerHTML = REACTIONS.map((r, i) => `<button type="button" data-react="${i}" aria-label="React ${r}">${r}</button>`).join('');
+$('reactions').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-react]');
+  if (!b || Date.now() - lastReact < 450) return;
+  lastReact = Date.now();
+  send({ type: 'react', r: Number(b.dataset.react) });
+});
+
+document.addEventListener('pointerdown', (e) => {
+  if (e.target.closest('.btn:not(:disabled), button.card, .creature-pick button:not(:disabled), .pill')) sfx.click();
+});
+
 // ---- timer + animation loop -------------------------------------------------------
+
+// Countdown beeps only while players are expected to act.
+const TICK_STAGES = new Set(['answer', 'write', 'vote', 'question', 'pick', 'turn', 'respond', 'bet', 'play', 'bid']);
+let lastSecond = null;
 
 function tick() {
   const v = state?.phase === 'playing' ? state.game : null;
   const timer = $('timer');
   if (v?.deadline && v.duration) {
     const left = Math.max(0, v.deadline - serverNow());
+    const secs = Math.ceil(left / 1000);
+    if (TICK_STAGES.has(v.stage) && secs !== lastSecond) {
+      if (secs <= 5 && secs > 0) { sfx.tick(secs <= 3); timer.classList.remove('pulse'); void timer.offsetWidth; timer.classList.add('pulse'); }
+      if (secs === 0 && lastSecond === 1) { sfx.timeUp(); fx.hostAnim('wobble'); }
+    }
+    lastSecond = secs;
     timer.hidden = false;
     $('timerNum').textContent = Math.ceil(left / 1000);
     $('timerFill').style.transform = `scaleX(${left / v.duration})`;
@@ -470,11 +576,11 @@ export function esc(s) {
 }
 
 let toastTimer;
-function toast(text) {
+function toast(text, ms = 3000) {
   $('toast').textContent = text;
   $('toast').hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { $('toast').hidden = true; }, 3000);
+  toastTimer = setTimeout(() => { $('toast').hidden = true; }, ms);
 }
 
 function banner(text) {
@@ -486,7 +592,19 @@ function banner(text) {
 
 await Promise.all([loadMe(), loadCatalog()]);
 const params = new URLSearchParams(location.search);
-if (params.get('login') === 'failed') toast('Discord sign-in failed, please try again.');
+if (params.get('login') === 'failed') {
+  const why = {
+    cancelled: 'Discord sign-in was cancelled.',
+    expired: 'Sign-in took too long or cookies are blocked. Please try again.',
+    token: `Discord rejected the sign-in. Check the Client Secret, and that this exact redirect is added in the Discord developer portal: ${me.redirectUri}`,
+    profile: "Couldn't read your Discord profile. Please try again.",
+  }[params.get('reason')] ?? 'Discord sign-in failed, please try again.';
+  toast(why, 9000);
+  const clean = new URL(location.href);
+  clean.searchParams.delete('login');
+  clean.searchParams.delete('reason');
+  history.replaceState(null, '', clean);
+}
 const linked = params.get('room');
 if (linked && /^[a-z]{4}$/i.test(linked)) {
   $('codeInput').value = linked.toUpperCase();

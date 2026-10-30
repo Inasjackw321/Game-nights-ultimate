@@ -1,6 +1,7 @@
 // Deep Cut and Hive Mind share a round structure: a prompt, a timed free-text
-// answer, (Deep Cut only) host review of off-list answers, then a reveal.
-// They differ only in how matching answers are scored.
+// answer, then a reveal. They differ in how matching answers are scored, and
+// Deep Cut judges answers instantly: anything not on the list is bounced back
+// straight away so the player can try again before time runs out.
 import { PROMPTS } from '../content/prompts.js';
 import { classify, clusterUnknowns, compilePrompt } from '../match.js';
 import { addPoints, clearTimer, deal, everyoneIn, marksFor, setTimer, tooLate, zeroScores } from './kit.js';
@@ -9,7 +10,7 @@ const MAX_ANSWER = 40;
 const compiled = new Map(PROMPTS.map((p) => [p.id, compilePrompt(p)]));
 export const compiledPrompt = (id) => compiled.get(id);
 
-export function promptGame({ meta, review, score }) {
+export function promptGame({ meta, instant, score }) {
   return {
     meta,
 
@@ -31,17 +32,17 @@ export function promptGame({ meta, review, score }) {
         if (g.stage !== 'answer') return 'Answers are closed.';
         if (tooLate(g, ctx)) return 'Too late — time is up.';
         if (pid in g.answers) return 'You already locked in an answer.';
-        g.answers[pid] = String(msg.text ?? '').slice(0, MAX_ANSWER);
+        const text = String(msg.text ?? '').slice(0, MAX_ANSWER);
+        if (instant) {
+          const c = classify(compiled.get(g.deck[g.round]), text);
+          if (c.kind === 'blank') return 'Type an answer first!';
+          if (c.kind !== 'match') return `“${c.label}” isn't on our list. Try another!`;
+        }
+        g.answers[pid] = text;
         if (everyoneIn(g.ids, g.answers, ctx)) closeAnswers(g, ctx);
         return;
       }
       if (!ctx.isHost(pid)) return 'Only the host can do that.';
-      if (msg.type === 'review' && g.stage === 'review') {
-        if (msg.accept) g.approved[msg.key] = true;
-        else delete g.approved[msg.key];
-        return;
-      }
-      if (msg.type === 'reveal' && g.stage === 'review') return reveal(g, ctx);
       if (msg.type === 'next' && g.stage === 'reveal') {
         if (g.round + 1 >= g.deck.length) { g.over = true; return; }
         Object.assign(g, startRound(g, ctx));
@@ -65,15 +66,15 @@ export function promptGame({ meta, review, score }) {
         duration: g.duration,
       };
       if (g.stage === 'answer') {
-        return { ...base, myAnswer: g.answers[pid] ?? null, canPlay: g.ids.includes(pid), marks: marksFor(g.ids, g.answers) };
-      }
-      if (g.stage === 'review') {
+        const mine = g.answers[pid] ?? null;
         return {
           ...base,
-          pending: g.unknowns.length,
-          items: ctx.isHost(pid, { peek: true })
-            ? g.unknowns.map((u) => ({ key: u.key, label: u.label, count: u.players.length, accepted: Boolean(g.approved[u.key]) }))
-            : null,
+          instant: Boolean(instant),
+          myAnswer: mine,
+          // Deep Cut shows the answer it recognised, e.g. "orechiete" -> "Orecchiette".
+          myLabel: instant && mine !== null ? classify(prompt, mine).label : mine,
+          canPlay: g.ids.includes(pid),
+          marks: marksFor(g.ids, g.answers),
         };
       }
       return { ...base, result: g.result, last: g.round + 1 >= g.deck.length };
@@ -81,7 +82,7 @@ export function promptGame({ meta, review, score }) {
   };
 
   function startRound(g, ctx) {
-    const out = { round: g.round + 1, stage: 'answer', answers: {}, classified: {}, unknowns: [], approved: {}, result: null };
+    const out = { round: g.round + 1, stage: 'answer', answers: {}, classified: {}, result: null };
     setTimer(out, ctx.settings.seconds, ctx);
     return out;
   }
@@ -89,18 +90,14 @@ export function promptGame({ meta, review, score }) {
   function closeAnswers(g, ctx) {
     const prompt = compiled.get(g.deck[g.round]);
     for (const id of g.ids) g.classified[id] = classify(prompt, g.answers[id] ?? '');
-    g.unknowns = clusterUnknowns(g.classified);
+    clusterUnknowns(g.classified);
     clearTimer(g);
-    if (review && g.unknowns.length && ctx.hostOnline()) {
-      g.stage = 'review';
-      return;
-    }
     reveal(g, ctx);
   }
 
   function reveal(g, ctx) {
     const prompt = compiled.get(g.deck[g.round]);
-    const { groups, misses, deltas, extra } = score(g.classified, new Set(Object.keys(g.approved)), prompt, ctx);
+    const { groups, misses, deltas, extra } = score(g.classified, prompt, ctx);
     addPoints(g, deltas);
     g.result = {
       groups: groups.map((x) => ({ ...x, players: x.players.map(ctx.name) })),

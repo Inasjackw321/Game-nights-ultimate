@@ -37,6 +37,6 @@ export default promptGame({
       { key: 'seconds', label: 'Seconds', values: [15, 20, 25, 35], default: 20 },
     ],
   },
-  review: false,
+  instant: false,
   score: scoreHiveMind,
 });

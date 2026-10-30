@@ -8,7 +8,12 @@ const SESSION_DAYS = 30;
 const DISCORD = 'https://discord.com';
 
 export function authEnabled(env) {
-  return Boolean(env.DISCORD_CLIENT_ID && env.DISCORD_CLIENT_SECRET && env.SESSION_SECRET);
+  return authMissing(env).length === 0;
+}
+
+// Names (never values) of the settings sign-in still needs.
+export function authMissing(env) {
+  return ['DISCORD_CLIENT_ID', 'DISCORD_CLIENT_SECRET', 'SESSION_SECRET'].filter((k) => !env[k]);
 }
 
 export async function handleAuth(request, env, url) {
@@ -38,7 +43,6 @@ function startLogin(env, url) {
     scope: 'identify',
     state,
     redirect_uri: redirectUri(url),
-    prompt: 'none',
   });
   return new Response(null, {
     status: 302,
@@ -57,9 +61,9 @@ async function finishLogin(request, env, url) {
   const expected = dot > 0 ? raw.slice(0, dot) : '';
   const next = safeNext(decodeURIComponent(dot > 0 ? raw.slice(dot + 1) : ''));
   const code = url.searchParams.get('code');
-  if (!code || !expected || url.searchParams.get('state') !== expected) {
-    return redirect(`${next}${next.includes('?') ? '&' : '?'}login=failed`, url);
-  }
+  const fail = (reason) => redirect(`${next}${next.includes('?') ? '&' : '?'}login=failed&reason=${reason}`, url);
+  if (url.searchParams.get('error')) return fail('cancelled');
+  if (!code || !expected || url.searchParams.get('state') !== expected) return fail('expired');
 
   const tokenRes = await fetch(`${DISCORD}/api/oauth2/token`, {
     method: 'POST',
@@ -72,11 +76,16 @@ async function finishLogin(request, env, url) {
       redirect_uri: redirectUri(url),
     }),
   });
-  if (!tokenRes.ok) return redirect(`${next}${next.includes('?') ? '&' : '?'}login=failed`, url);
+  if (!tokenRes.ok) {
+    // Usually a wrong client secret, or a redirect URL that doesn't exactly
+    // match the one registered in the Discord developer portal.
+    console.error('discord token exchange failed', tokenRes.status, await tokenRes.text());
+    return fail('token');
+  }
   const { access_token: accessToken } = await tokenRes.json();
 
   const meRes = await fetch(`${DISCORD}/api/users/@me`, { headers: { Authorization: `Bearer ${accessToken}` } });
-  if (!meRes.ok) return redirect(`${next}${next.includes('?') ? '&' : '?'}login=failed`, url);
+  if (!meRes.ok) return fail('profile');
   const me = await meRes.json();
 
   const user = { id: me.id, name: (me.global_name || me.username || 'Diver').slice(0, 32), avatar: avatarUrl(me) };

@@ -14,6 +14,7 @@ import { assignTargets, solvePoints } from '../src/games/whoami.js';
 import { handValue, isBlackjack, payout } from '../src/games/blackjack.js';
 import { countFace, isRaise, minRaise } from '../src/games/dice.js';
 import { makeOdds, raceTrack } from '../src/games/derby.js';
+import { BOARD, netWorth, tollFor } from '../src/games/tycoon.js';
 
 // Deterministic PRNG so failures are reproducible.
 function rng(seed = 1) {
@@ -28,10 +29,26 @@ test('Deep Cut: points split by duplicates, rarest revealed last', () => {
   const answers = { a: 'spaghetti', b: 'Spagetti', c: 'spaghetti', d: 'trofie', e: 'tortiglioni', f: 'Tortiglioni!', g: 'pizza', h: '' };
   const classified = Object.fromEntries(Object.entries(answers).map(([p, t]) => [p, classify(pasta, t)]));
   clusterUnknowns(classified);
-  const { groups, deltas, misses } = scoreDeepCut(classified, new Set([toKey('tortiglioni')]), pasta, { rand: rng() });
-  assert.deepEqual(groups.map((g) => [g.label, g.count, g.points]), [['Spaghetti', 3, 33], ['tortiglioni', 2, 175], ['Trofie', 1, 500]]);
-  assert.deepEqual(deltas, { a: 33, b: 33, c: 33, d: 500, e: 175, f: 175, g: 0, h: 0 });
-  assert.equal(misses.length, 2);
+  const { groups, deltas, misses } = scoreDeepCut(classified, pasta, { rand: rng() });
+  assert.deepEqual(groups.map((g) => [g.label, g.count, g.points]), [['Spaghetti', 3, 33], ['Trofie', 1, 500]]);
+  assert.deepEqual(deltas, { a: 33, b: 33, c: 33, d: 500, e: 0, f: 0, g: 0, h: 0 });
+  assert.equal(misses.length, 3);
+});
+
+test('Deep Cut judges answers instantly: off-list answers bounce, real ones lock in', () => {
+  const game = GAME_BY_ID.deepcut;
+  const ctx = { now: 1000, settings: defaultSettings(game.meta), seen: [], rand: rng(9), name: (id) => id, online: () => true, isHost: () => true, ids: ['a', 'b'] };
+  const g = game.init(ctx);
+  const prompt = compilePrompt(PROMPTS.find((p) => p.id === g.deck[0]));
+  assert.match(game.action(g, 'a', { type: 'answer', text: 'zorblax prime' }, ctx), /isn't on our list/);
+  assert.equal(g.answers.a, undefined, 'rejected answers are not locked in');
+  const real = prompt.answers.find((x) => x.tier === 2);
+  assert.equal(game.action(g, 'a', { type: 'answer', text: real.label.toLowerCase() }, ctx), undefined);
+  assert.equal(game.view(g, 'a', ctx).myLabel, real.label);
+  assert.match(game.action(g, 'a', { type: 'answer', text: real.label }, ctx), /already locked in/);
+  game.action(g, 'b', { type: 'answer', text: prompt.answers.find((x) => x.tier === 4).label }, ctx);
+  assert.equal(g.stage, 'reveal', 'round closes the moment everyone is in, no host review');
+  assert.deepEqual(g.result.deltas, { a: 200, b: 500 });
 });
 
 test('Hive Mind: points for matching others, bonus for the biggest school', () => {
@@ -115,6 +132,17 @@ test('Reef Derby: fair odds and the chosen winner finishes first', () => {
   }
 });
 
+test('Reef Tycoon: tolls grow with coral and reef networks', () => {
+  const g = { owner: { 1: 'a' }, level: { 1: 0 }, pearls: { a: 100 } };
+  assert.equal(tollFor(g, 1), BOARD[1].toll);
+  g.level[1] = 2;
+  assert.equal(tollFor(g, 1), Math.round(BOARD[1].toll * 5));
+  g.owner[2] = 'a';
+  assert.equal(tollFor(g, 1), Math.round(BOARD[1].toll * 5 * 1.5)); // neighbouring plot owned
+  assert.equal(netWorth(g, 'a'), 100 + BOARD[1].price + 2 * Math.round(BOARD[1].price * 0.6) + BOARD[2].price);
+  assert.equal(BOARD.length, 20);
+});
+
 // ---- full simulated games for every module --------------------------------
 
 // A tiny fake room: everyone online, time advances when timers expire.
@@ -165,7 +193,19 @@ function simulate(game, n, decide, { seed = 1, maxSteps = 5000 } = {}) {
 const pick = (arr, rand) => arr[Math.floor(rand() * arr.length)];
 
 const bots = {
-  deepcut: (v, id, r) => v.stage === 'answer' && v.myAnswer === null ? { type: 'answer', text: pick(['spaghetti', 'Egypt', 'gold', 'zorblax', ''], r) } : null,
+  // Deep Cut bots try a couple of times (off-list guesses bounce back), then give up.
+  deepcut: (() => {
+    const tries = new Map();
+    return (v, id, r) => {
+      if (v.stage !== 'answer' || v.myAnswer !== null) return null;
+      const k = `${id}:${v.round}`;
+      const n = tries.get(k) ?? 0;
+      if (n >= 2) return null;
+      tries.set(k, n + 1);
+      const prompt = compilePrompt(PROMPTS.find((p) => p.text === v.title));
+      return { type: 'answer', text: r() < 0.6 ? pick(prompt.answers, r).label : pick(['zorblax', 'qqq', ''], r) };
+    };
+  })(),
   hivemind: (v, id, r) => v.stage === 'answer' && v.myAnswer === null ? { type: 'answer', text: pick(['penne', 'oak', 'apple'], r) } : null,
   fib: (v, id, r) => {
     if (v.stage === 'write' && v.myAnswer === null) return { type: 'answer', text: `fake ${id} ${Math.floor(r() * 3)}` };
@@ -191,6 +231,12 @@ const bots = {
     const next = minRaise(v.bid);
     return next.qty > v.totalDice ? { type: 'liar' } : { type: 'bid', ...next };
   },
+  tycoon: (v, id, r) => {
+    if (v.active !== id) return null;
+    if (v.stage === 'roll') return { type: 'roll' };
+    if (v.stage === 'decide') return { type: r() < 0.7 ? 'buy' : 'pass' };
+    return null;
+  },
   derby: (v, id, r) => v.stage === 'bet' && !v.myBet && v.chips >= v.minBet ? { type: 'bet', racer: Math.floor(r() * 6), amount: Math.min(v.chips, 100) } : null,
 };
 
@@ -205,6 +251,14 @@ for (const game of GAMES) {
     }
   });
 }
+
+test('Reef Tycoon: nobody ever goes below zero pearls', () => {
+  for (const seed of [4, 5, 6, 7, 8]) {
+    const { g, ids } = simulate(GAME_BY_ID.tycoon, 6, bots.tycoon, { seed });
+    for (const id of ids) assert.ok(g.pearls[id] >= 0, `seed ${seed}: ${id} has ${g.pearls[id]}`);
+    assert.equal(g.turnsTaken, g.maxTurns);
+  }
+});
 
 test('every game declares sane options', () => {
   for (const g of GAMES) {

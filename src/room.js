@@ -7,6 +7,8 @@ const MAX_NAME = 16;
 const IDLE_TTL_MS = 6 * 60 * 60 * 1000; // rooms are wiped after 6h with nobody around
 const MIN_RANKED_PLAYERS = 3; // games with fewer players don't count globally
 export const CREATURES = ['crab', 'jelly', 'turtle', 'octopus', 'seahorse', 'eel', 'fish', 'squid', 'ray', 'whale'];
+const REACTION_COUNT = 6; // matches REACTIONS in public/app.js
+const REACT_COOLDOWN_MS = 400;
 // Pearls for the room's "tonight" leaderboard: 1st, 2nd, 3rd place.
 const PEARLS = [3, 2, 1];
 
@@ -61,6 +63,18 @@ export class Room extends DurableObject {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
     if (!msg || typeof msg !== 'object') return;
+
+    // Emoji reactions are fire-and-forget: relayed to everyone, never stored.
+    if (msg.type === 'react') {
+      const r = Number(msg.r);
+      const now = Date.now();
+      this.lastReact ??= new Map();
+      if (!this.state.players[pid] || !(r >= 0 && r < REACTION_COUNT) || now - (this.lastReact.get(pid) ?? 0) < REACT_COOLDOWN_MS) return;
+      this.lastReact.set(pid, now);
+      for (const sock of this.ctx.getWebSockets()) this.send(sock, { type: 'react', pid, r });
+      return;
+    }
+
     this.state.lastActive = Date.now();
     const error = this.handle(pid, msg, ws);
     if (error) this.send(ws, { type: 'error', message: error });

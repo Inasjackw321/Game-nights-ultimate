@@ -1,15 +1,16 @@
 # Game Nights Ultimate
 
-Live party games for up to 10 friends, set on a pixel-art reef. One person makes a room, everyone joins with a 4-letter code on their phone or laptop, and the host picks from nine games. Players sit on rocks in a ring around the anglerfish host.
+Live party games for up to 10 friends, set on a pixel-art reef. One person makes a room, everyone joins with a 4-letter code on their phone or laptop, and the host picks from ten games. Players sit on rocks in a ring around the anglerfish host.
 
 | Game | Type | How it works |
 | --- | --- | --- |
-| **Deep Cut** | Word | Name something in the category that nobody else will. Rarer correct answers score more, and duplicates split the points. |
+| **Deep Cut** | Word | Name something in the category that nobody else will. The game checks your answer instantly (typos forgiven), and if it's not on the list you can try again. Rarer correct answers score more, and duplicates split the points. |
 | **Hive Mind** | Word | The opposite of Deep Cut: score for every player who gives the same answer as you. |
 | **Fib Factory** | Bluffing | Write a fake answer to a strange-but-true fact, then try to spot the real one. Score for finding the truth and for every player your lie fools. |
 | **Blitz** | Trivia | Quick-fire multiple choice. Faster correct answers score more. |
 | **Most Likely To** | Social | "Who's most likely to…?" Vote for a player, and score for agreeing with the room. |
 | **Who Am I?** | Guessing | You pick a secret character for someone else. Everyone sees the character over your head except you. Ask yes/no questions or guess, and the room answers. |
+| **Reef Tycoon** | Board | An original roll-and-move property game. Claim reef plots, charge tolls, grow coral for bigger tolls, and link neighbouring plots into a reef network. Richest diver after the last round wins. |
 | **Blackjack** | Casino | Play against the house with play chips. Everyone acts at once. Most chips at the end wins. |
 | **Liar's Dice** | Casino | Bid on the dice hidden under everyone's cups (ones are wild) or call "Liar!". Your dice are your hearts. |
 | **Reef Derby** | Casino | Bet play chips on racing sea creatures. The odds are fair, and long shots pay big. |
@@ -87,6 +88,13 @@ npm run smoke
    ```
 
 The app only asks Discord for the `identify` scope (username and avatar). Without these secrets the app still works, in guest-only mode, and the sign-in button is hidden.
+
+### Sign-in troubleshooting
+
+- **No "Sign in with Discord" button:** the home page says which Worker secrets are missing. You can also open `https://<your-site>/api/me`; `authMissing` lists them. Add each with `npx wrangler secret put <NAME>`, then refresh.
+- **Discord shows "Invalid OAuth2 redirect_uri":** the redirect in the Discord portal must match exactly. `/api/me` shows the exact `redirectUri` your site uses; paste that into **OAuth2 → Redirects** and save.
+- **"Discord rejected the sign-in" after approving:** the Client Secret is wrong (or was reset). Reset it in the portal and run `npx wrangler secret put DISCORD_CLIENT_SECRET` again.
+- **Bounced back with "took too long or cookies are blocked":** allow cookies for the site and try again.
 
 ## Deploy
 

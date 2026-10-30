@@ -89,15 +89,16 @@ ann.send({ type: 'answer', text: common.label.toLowerCase() });
 bo.send({ type: 'answer', text: deep.label });
 await bo.until((s) => Object.keys(s.game.marks).length === 3, 'three answers in');
 for (const b of [host, ann, cy]) assert.ok(!JSON.stringify(b.states).includes(deep.label), `${b.name} saw Bo's answer early`);
+// Off-list answers bounce straight back; Cy then gets a real one in.
 cy.send({ type: 'answer', text: 'Zorblax Prime' });
-s = await host.until((s) => s.game.stage === 'review', 'review');
-assert.equal(s.game.items.length, 1);
-assert.equal(ann.game.items, null, 'only the host sees off-list answers');
-host.send({ type: 'review', key: s.game.items[0].key, accept: true });
-host.send({ type: 'reveal' });
-s = await host.until((s) => s.game.stage === 'reveal', 'reveal 1');
+await sleep(300);
+assert.match(cy.errors.at(-1)?.message ?? '', /isn't on our list/);
+assert.ok(!(cy.state.you in host.game.marks), 'a bounced answer is not locked in');
+const solid = prompt.answers.find((a) => a.tier === 2);
+cy.send({ type: 'answer', text: solid.label });
+s = await host.until((s) => s.game.stage === 'reveal', 'instant reveal (no host review)');
 const score = (st, name) => st.players.find((p) => p.name === name).score;
-assert.deepEqual(['Host', 'Ann', 'Bo', 'Cy'].map((n) => score(s, n)), [50, 50, 500, 350]);
+assert.deepEqual(['Host', 'Ann', 'Bo', 'Cy'].map((n) => score(s, n)), [50, 50, 500, 200]);
 console.log('deep cut round 1:', s.game.result.groups.map((g) => `${g.label}×${g.count}=${g.points}`).join(', '));
 
 // Round 2: Cy drops and comes back; only Ann answers so the alarm closes it.
@@ -108,7 +109,7 @@ s = await host.until((s) => s.game.stage === 'answer' && s.game.round === 1, 'ro
 const cyBack = new Bot('Cy', code);
 cyBack.pid = cy.pid;
 await cyBack.connect();
-assert.equal(score(cyBack.state, 'Cy'), 350, 'score survives a reconnect');
+assert.equal(score(cyBack.state, 'Cy'), 200, 'score survives a reconnect');
 assert.equal(cyBack.state.players.length, 4);
 ann.send({ type: 'answer', text: byText.get(s.game.title).answers.find((a) => a.tier === 2).label });
 const t0 = Date.now();

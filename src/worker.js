@@ -1,4 +1,4 @@
-import { authEnabled, currentUser, handleAuth } from './auth.js';
+import { authEnabled, authMissing, currentUser, handleAuth } from './auth.js';
 import { CATALOG } from './games/index.js';
 
 export { Room } from './room.js';
@@ -15,7 +15,12 @@ export default {
     if (auth) return auth;
 
     if (url.pathname === '/api/me') {
-      return Response.json({ authEnabled: authEnabled(env), user: await currentUser(request, env) });
+      return Response.json({
+        authEnabled: authEnabled(env),
+        authMissing: authMissing(env),
+        redirectUri: `${url.origin}/auth/discord/callback`,
+        user: await currentUser(request, env),
+      });
     }
 
     if (url.pathname === '/api/catalog') return Response.json(CATALOG);

@@ -8,8 +8,6 @@ export const TIERS = {
   3: { name: 'Rare', points: 350 },
   4: { name: 'Deep cut', points: 500 },
 };
-// Off-list answers the host approves score as this tier.
-export const APPROVED_TIER = 3;
 
 // A unique answer scores its full tier value; each extra person who said it
 // splits it further: unique deep cut = 500, half of a 10-player room on a
@@ -18,14 +16,14 @@ export function groupPoints(tier, count) {
   return Math.round(TIERS[tier].points / count);
 }
 
-export function scoreDeepCut(classified, approved, prompt, ctx) {
-  const { groups, misses } = groupAnswers(classified, (key) => approved.has(key));
+export function scoreDeepCut(classified, prompt, ctx) {
+  // Only recognised answers can be locked in, so off-list answers never score.
+  const { groups, misses } = groupAnswers(classified, () => false);
   const deltas = Object.fromEntries(Object.keys(classified).map((id) => [id, 0]));
   const scored = groups.map((g) => {
-    const tier = g.tier ?? APPROVED_TIER;
-    const points = groupPoints(tier, g.players.length);
+    const points = groupPoints(g.tier, g.players.length);
     for (const p of g.players) deltas[p] = points;
-    return { ...g, tier, tierName: g.offList ? 'Approved · Rare' : TIERS[tier].name, count: g.players.length, points };
+    return { ...g, tierName: TIERS[g.tier].name, count: g.players.length, points };
   });
   // Reveal order: most-shared first, rarest last.
   scored.sort((a, b) => b.count - a.count || a.points - b.points);
@@ -48,6 +46,6 @@ export default promptGame({
       { key: 'seconds', label: 'Seconds', values: [15, 20, 25, 35, 45], default: 25 },
     ],
   },
-  review: true,
+  instant: true,
   score: scoreDeepCut,
 });

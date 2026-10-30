@@ -37,22 +37,16 @@ function pop(h, i) {
 
 // ---- Deep Cut & Hive Mind ------------------------------------------------------
 
-function promptPanel(v, h, { review }) {
+function promptPanel(v, h, { deep }) {
   if (v.stage === 'answer') {
     if (!v.canPlay) return '<p class="waiting">Everyone is answering</p>';
-    return v.myAnswer === null ? textForm('answer', { placeholder: 'Your answer' }) : locked('Locked in', v.myAnswer, h);
-  }
-  if (v.stage === 'review') {
-    if (!v.items) return `<p class="waiting">The host is checking ${v.pending} answer${v.pending === 1 ? '' : 's'} that ${v.pending === 1 ? "isn't" : "aren't"} on the list</p>`;
-    return `<p class="note">These answers aren't on the list. Accept the real ones (they score as <b>Rare</b>).</p>
-      <ul class="list">${v.items.map((u) => `<li class="item ${u.accepted ? 't3' : ''}"><span class="label">${h.esc(u.label)}${u.count > 1 ? ` <span class="muted">×${u.count}</span>` : ''}</span>
-        <span class="row"><button class="btn small ${u.accepted ? 'go' : ''}" ${send({ type: 'review', key: u.key, accept: true })}>Accept</button>
-        <button class="btn small ${u.accepted ? '' : 'danger'}" ${send({ type: 'review', key: u.key, accept: false })}>Reject</button></span></li>`).join('')}</ul>
-      <button class="btn primary big" ${send({ type: 'reveal' })}>Reveal answers</button>`;
+    if (v.myAnswer !== null) return locked(v.instant ? 'Locked in ✓' : 'Locked in', v.myLabel ?? v.myAnswer, h);
+    return `${textForm('answer', { placeholder: 'Your answer' })}
+      ${v.instant ? '<p class="note">The game checks your answer the moment you hit Enter. Not on the list? Just try another!</p>' : ''}`;
   }
   const r = v.result;
   return `<ul class="list">${r.groups.length ? r.groups.map((g, i) => `
-      <li class="item ${g.tier ? `t${g.tier}` : g.count > 1 ? 't3' : 't1'} ${g.count === 1 && review ? 'solo' : ''}${pop(h, i)}">
+      <li class="item ${g.tier ? `t${g.tier}` : g.count > 1 ? 't3' : 't1'} ${g.count === 1 && deep ? 'solo' : ''}${pop(h, i)}">
         <span class="label">${h.esc(g.label)}</span><span class="pts">+${g.points}</span>
         <span class="meta">${h.esc(g.tierName)} · ${g.count === 1 ? 'only one' : `${g.count} said it`}</span>
         <span class="who">${g.players.map(h.esc).join(', ')}</span></li>`).join('') : '<li class="muted">No accepted answers this round.</li>'}</ul>
@@ -274,9 +268,67 @@ function derbyFrame(v, panel, now) {
   }
 }
 
+// ---- Reef Tycoon -----------------------------------------------------------------------
+
+export const CREATURE_COLOR = {
+  crab: '#ef5a3c', jelly: '#d77bff', turtle: '#4fbf73', octopus: '#ff8a3d', seahorse: '#ffd23f',
+  eel: '#3fd1b5', fish: '#ffb02e', squid: '#f4ead2', ray: '#4fa3ff', whale: '#5b7cff',
+};
+
+// 20 tiles round the edge of a 6×6 grid, clockwise from the top-left corner.
+function cellOf(i) {
+  if (i <= 5) return [1, i + 1];
+  if (i <= 9) return [i - 4, 6];
+  if (i <= 15) return [6, 16 - i];
+  return [21 - i, 1];
+}
+
+const TILE_ICON = { home: '⌂', chest: '✦', shark: '🦈', current: '≋' };
+
+function tycoonPanel(v, h) {
+  const tokensAt = {};
+  for (const [id, pos] of Object.entries(v.pos)) (tokensAt[pos] ??= []).push(id);
+  const tiles = v.board.map((t, i) => {
+    const [r, c] = cellOf(i);
+    const own = t.owner ? CREATURE_COLOR[h.look(t.owner)] : null;
+    const info = t.kind === 'plot'
+      ? (t.owner ? `toll ${t.tollNow}` : `◆${t.price}`)
+      : t.kind === 'current' ? (t.move > 0 ? `+${t.move} ▶` : `◀ ${t.move}`) : t.kind === 'home' ? `+150` : '';
+    const tokens = (tokensAt[i] ?? []).map((id) => `<img class="token ${id === v.active ? 'act' : ''}" data-token="${h.esc(id)}" src="${spriteUrl(h.look(id))}" alt="${h.esc(h.name(id))}">`).join('');
+    return `<div class="tile k-${t.kind} ${t.owner ? 'owned' : ''} ${v.offer?.tile === i ? 'offer' : ''}" data-tile="${i}" style="grid-row:${r};grid-column:${c};${own ? `--own:${own}` : ''}">
+      <span class="tname">${TILE_ICON[t.kind] ? `<i>${TILE_ICON[t.kind]}</i>` : ''}${h.esc(t.name)}</span>
+      <span class="tinfo">${info}${t.level ? ` <b>${'★'.repeat(t.level)}</b>` : ''}</span>
+      <span class="tokens">${tokens}</span>
+    </div>`;
+  }).join('');
+
+  const mine = v.active === h.me;
+  let controls = '';
+  if (v.stage === 'roll') {
+    controls = mine ? `<button class="btn primary big roll-btn" ${send({ type: 'roll' })}>🎲 ROLL!</button>` : `<p class="waiting">${h.esc(h.name(v.active))} is rolling</p>`;
+  } else if (v.stage === 'decide' && v.offer) {
+    const t = v.board[v.offer.tile];
+    const q = v.offer.kind === 'buy'
+      ? `Claim <b>${h.esc(t.name)}</b> for ◆${v.offer.cost}? Toll: ${t.toll}`
+      : `Grow coral on <b>${h.esc(t.name)}</b> to level ${v.offer.level} for ◆${v.offer.cost}?`;
+    controls = mine
+      ? `<p class="note">${q}</p><div class="btn-row"><button class="btn go" ${send({ type: 'buy' })}>${v.offer.kind === 'buy' ? 'Claim it!' : 'Grow!'}</button><button class="btn" ${send({ type: 'pass' })}>Pass</button></div>`
+      : `<p class="waiting">${h.esc(h.name(v.active))} is deciding about ${h.esc(t.name)}</p>`;
+  }
+  const dice = v.move ? die(v.move.dice, 'roll-die') : '';
+  const log = v.log.slice(-4).reverse().map((l, i) => `<li class="${i === 0 ? 'new' : ''}">${h.esc(l)}</li>`).join('');
+  const center = `<div class="board-center">
+      <div class="row center-row">${dice}<div><span class="eyebrow">Your pearls</span><div class="chips big-chips">◆ ${v.pearls[h.me] ?? 0}</div></div></div>
+      ${v.canPlay ? controls : '<p class="waiting">Watching</p>'}
+      <ul class="tlog">${log}</ul>
+    </div>`;
+  return `<div class="tycoon-board">${tiles}${center}</div>
+    <p class="note">Land on an empty plot to claim it. Others pay you a toll when they land there. Land on your own plot to grow coral (bigger tolls), and own neighbouring plots for a <b>×1.5 reef network</b> bonus. Highest net worth (pearls + plots) after the last round wins.</p>`;
+}
+
 export const RENDERERS = {
-  deepcut: { panel: (v, h) => promptPanel(v, h, { review: true }) },
-  hivemind: { panel: (v, h) => promptPanel(v, h, { review: false }) },
+  deepcut: { panel: (v, h) => promptPanel(v, h, { deep: true }) },
+  hivemind: { panel: (v, h) => promptPanel(v, h, { deep: false }) },
   fib: { panel: fibPanel },
   blitz: { panel: blitzPanel },
   likely: { panel: likelyPanel },
@@ -284,6 +336,8 @@ export const RENDERERS = {
   blackjack: { panel: blackjackPanel },
   dice: { panel: dicePanel },
   derby: { panel: derbyPanel },
+  // Keep one key for the whole game so the board is patched in place, never redrawn.
+  tycoon: { panel: tycoonPanel, key: () => 'board' },
 };
 
 export const FRAMES = { derby: derbyFrame };

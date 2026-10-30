@@ -22,6 +22,8 @@
       <span>GAME NIGHTS<b>ULTIMATE</b></span>
     </a>
     <nav class="top-right">
+      <button class="pill" id="muteBtn" type="button"></button>
+      <button class="pill" id="musicBtn" type="button"></button>
       <span class="pill code-pill" id="roomTag" hidden></span>
       <a class="pill" href="#leaderboard" id="boardLink">Leaderboard</a>
       <span id="userChip"></span>
@@ -36,7 +38,7 @@
       <div class="home-hero">
         <div class="hero-scene" id="heroScene"></div>
         <h1 class="hero-title">Party games under the sea</h1>
-        <p class="hero-sub">Up to 10 friends, one room code, nine games: word games, bluffing, trivia, guessing and play-chip casino games. Nothing to install.</p>
+        <p class="hero-sub">Up to 10 friends, one room code, ten games: word games, bluffing, trivia, guessing, a board game and play-chip casino games. Nothing to install.</p>
       </div>
       <form class="panel stack" id="homeForm" autocomplete="off">
         <label class="field">
@@ -65,6 +67,7 @@
         </div>
         <div class="seats" id="seats"></div>
       </div>
+      <div class="reactions" id="reactions" aria-label="Send a reaction"></div>
       <div class="panel game-panel" id="panel"></div>
     </section>
 
