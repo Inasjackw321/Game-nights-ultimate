@@ -615,3 +615,45 @@ input.nope { animation: nope 0.4s ease; box-shadow: 0 -3px 0 0 var(--red), 0 3px
 .seat[data-speaking] .creature { filter: drop-shadow(0 0 6px var(--green)) drop-shadow(0 0 2px var(--green)); }
 .seat[data-speaking] .rock { animation: talkRing 0.5s ease-in-out infinite; }
 @keyframes talkRing { 50% { filter: drop-shadow(0 0 8px var(--green)); transform: scale(1.06); } }
+
+/* ---- seasons & trophies ---- */
+.big-tabs .btn { font-size: 13px; padding: 9px 14px; }
+.season-hero { text-align: center; background: radial-gradient(ellipse at 50% 30%, rgba(255, 224, 102, 0.16), transparent 70%); padding: 6px 0 12px; }
+.season-name { font-size: clamp(20px, 5vw, 28px); color: var(--yellow); text-shadow: 3px 3px 0 var(--ink); margin: 4px 0 2px; }
+.season-name + p { margin: 0; }
+.trophy-row { display: flex; justify-content: center; align-items: flex-end; gap: 18px; margin: 4px 0 10px; }
+.trophy-btn { background: none; border: 0; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--text); font-family: var(--pixel); font-size: 10px; transition: transform 0.2s cubic-bezier(.34, 1.56, .64, 1); }
+.trophy-btn img { width: 56px; height: 56px; filter: drop-shadow(3px 3px 0 var(--ink)); animation: bob 2.6s ease-in-out infinite; }
+.trophy-btn.p1 img { width: 84px; height: 84px; filter: drop-shadow(3px 3px 0 var(--ink)) drop-shadow(0 0 12px rgba(255, 201, 60, 0.6)); }
+.trophy-btn.p2 img { animation-delay: -0.8s; } .trophy-btn.p3 img { animation-delay: -1.6s; }
+.trophy-btn:hover { transform: translateY(-6px) scale(1.08); }
+.season-pick { max-width: 280px; margin: 6px auto 12px; }
+.cup-icon { width: 26px; height: 26px; vertical-align: middle; }
+.season-table td.pts { color: var(--yellow); font-family: var(--pixel); font-size: 13px; }
+.season-table tr.podium.p1 td { background: rgba(255, 201, 60, 0.08); }
+.cabinet { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+.cab { display: flex; flex-direction: column; align-items: center; gap: 3px; text-align: center; }
+.cab img { width: 54px; height: 54px; transition: transform 0.25s cubic-bezier(.34, 1.56, .64, 1); }
+.cab:hover img { transform: rotate(-8deg) scale(1.15); }
+.cab b { font-family: var(--pixel); font-size: 11px; color: var(--yellow); }
+.cab span { font-size: 13px; }
+.cups { margin-left: 6px; color: var(--yellow); }
+.gold { color: var(--yellow); }
+.season-gain { text-align: center; font-family: var(--pixel); font-size: 16px; color: var(--yellow); text-shadow: 2px 2px 0 var(--ink); animation: panelIn 0.5s cubic-bezier(.34, 1.56, .64, 1); }
+
+.trophy-modal {
+  position: fixed; inset: 0; z-index: 70; display: grid; place-items: center; padding: 16px;
+  background: radial-gradient(ellipse at center, rgba(31, 79, 122, 0.85), rgba(5, 12, 24, 0.94));
+  animation: modalIn 0.3s ease-out;
+}
+.trophy-modal.closing { animation: modalOut 0.22s ease-in forwards; }
+@keyframes modalIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalOut { to { opacity: 0; } }
+.trophy-card { width: min(460px, 100%); background: var(--panel); padding: 16px; text-align: center;
+  box-shadow: 0 -3px 0 0 var(--ink), 0 3px 0 0 var(--ink), -3px 0 0 0 var(--ink), 3px 0 0 0 var(--ink), 0 20px 60px rgba(0, 0, 0, 0.5);
+  animation: cardIn 0.5s cubic-bezier(.34, 1.56, .64, 1); }
+@keyframes cardIn { from { transform: scale(0.6) translateY(40px); opacity: 0; } to { transform: none; opacity: 1; } }
+.trophy-head h2 { font-size: clamp(20px, 6vw, 30px); text-shadow: 3px 3px 0 var(--ink); margin-top: 4px; }
+.trophy-stage { height: min(56vh, 420px); margin: 6px -6px; cursor: grab; }
+.trophy-stage:active { cursor: grabbing; }
+.trophy-stage canvas { width: 100% !important; height: 100% !important; display: block; }

@@ -15,17 +15,38 @@ export default {
     if (auth) return auth;
 
     if (url.pathname === '/api/me') {
+      const user = await currentUser(request, env);
+      const trophies = user ? (await (await hub(env).fetch(`https://hub/trophies?id=${encodeURIComponent(user.id)}`)).json()).trophies : [];
       return Response.json({
         authEnabled: authEnabled(env),
         authMissing: authMissing(env),
         redirectUri: `${url.origin}/auth/discord/callback`,
-        user: await currentUser(request, env),
+        user,
+        trophies,
       });
     }
 
     if (url.pathname === '/api/catalog') return Response.json(CATALOG);
 
     if (url.pathname === '/api/ice') return Response.json({ iceServers: await iceServers(env) });
+
+    if (url.pathname === '/api/season') {
+      return hub(env).fetch(`https://hub/season?season=${encodeURIComponent(url.searchParams.get('season') ?? '')}`);
+    }
+
+    if (url.pathname === '/api/profile') {
+      return hub(env).fetch(`https://hub/profile?id=${encodeURIComponent(url.searchParams.get('id') ?? '')}`);
+    }
+
+    // Local testing only: lets the smoke test record results in a past season
+    // so trophy awarding can be exercised. Enabled by TEST_HOOKS=1 in .dev.vars;
+    // never set this in production.
+    if (url.pathname === '/api/test/record' && env.TEST_HOOKS === '1' && request.method === 'POST') {
+      return hub(env).fetch('https://hub/record', { method: 'POST', body: await request.text() });
+    }
+    if (url.pathname === '/api/test/user' && env.TEST_HOOKS === '1' && request.method === 'POST') {
+      return hub(env).fetch('https://hub/user', { method: 'POST', body: await request.text() });
+    }
 
     if (url.pathname === '/api/leaderboard') {
       const game = url.searchParams.get('game') ?? 'all';

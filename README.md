@@ -23,6 +23,15 @@ Casino games use **play chips only**. There is no real money, buying chips, or c
 - **Sign in with Discord** (one click, top right) to appear on the **global leaderboard**. It ranks players by wins, for each game and across all games. A game only counts when it had 3 or more players, so a solo game can't pad your stats.
 - **Tonight's standings** in the room: every finished game awards pearls (3 / 2 / 1 for the top three), so you can crown the overall winner of the night.
 
+## Seasons and trophies
+
+Every calendar month is a **season** with its own name (October is the *Spooky Trench Season*, and so on).
+
+- Every ranked game (3+ players) earns signed-in players **season points**: `2 × (players − your place + 1)`. Winning a 6-player game is worth 12, and last place still gets 2, so bigger games and better finishes count for more.
+- When the month ends, the season's **top 3 win gold, silver and bronze trophies**, which are kept forever in their **trophy cabinet** (Leaderboard → 🏆 Season). Ties share a place.
+- Trophies are 3D (Three.js, included in `public/vendor/three`): tap one to spin it round, with an engraved plate showing the season, place and winner. The first time a winner opens the site after the season ends, their new trophy pops up with fireworks.
+- Trophies are awarded automatically the first time anyone loads the leaderboard (or finishes a game) after the month rolls over. No scheduler is needed.
+
 ## Voice chat
 
 Click **🎙 Join voice chat** under the reef, allow the microphone, and everyone else in voice can hear you. A player's creature glows green while they talk, and 🎧 / 🔇 shows who's in voice and who's muted.
@@ -71,7 +80,7 @@ Tests:
 npm test
 ```
 
-The unit tests cover the scoring rules, and the suite also plays every game to completion with simulated players. With `npm run dev` running, the end-to-end test plays real games over WebSockets and checks the leaderboard:
+The unit tests cover the scoring rules, and the suite also plays every game to completion with simulated players. With `npm run dev` running, the end-to-end test plays real games over WebSockets and checks the leaderboard, season points and trophy awards. It needs `TEST_HOOKS=1` in `.dev.vars` (already in `.dev.vars.example`; never set it in production):
 
 ```bash
 npm run smoke

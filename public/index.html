@@ -11,6 +11,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Pixelify+Sans:wght@400;600;700&family=Silkscreen:wght@400;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script type="importmap">{ "imports": { "three": "/vendor/three/three.module.min.js" } }</script>
 </head>
 <body>
   <div class="crt" aria-hidden="true"></div>
@@ -25,7 +26,7 @@
       <button class="pill" id="muteBtn" type="button"></button>
       <button class="pill" id="musicBtn" type="button"></button>
       <span class="pill code-pill" id="roomTag" hidden></span>
-      <a class="pill" href="#leaderboard" id="boardLink">Leaderboard</a>
+      <a class="pill" href="#leaderboard" id="boardLink">🏆 Leaderboard</a>
       <span id="userChip"></span>
     </nav>
   </header>
@@ -77,10 +78,17 @@
     <!-- Global leaderboard -->
     <section class="screen" id="screen-board" hidden>
       <div class="panel">
-        <div class="panel-head"><h2>Global leaderboard</h2><a class="pill" href="#" id="boardBack">Back</a></div>
-        <p class="muted small">Every game played with 3+ players counts, for anyone signed in with Discord. Ranked by wins.</p>
-        <div class="tabs" id="boardTabs"></div>
-        <div id="boardBody"></div>
+        <div class="panel-head"><h2>Leaderboards</h2><a class="pill" href="#" id="boardBack">Back</a></div>
+        <div class="tabs big-tabs" id="boardMode">
+          <button class="btn primary" data-mode="season">🏆 Season</button>
+          <button class="btn" data-mode="alltime">All-time</button>
+        </div>
+        <div id="seasonView"></div>
+        <div id="alltimeView" hidden>
+          <p class="muted small">Every game played with 3+ players counts, for anyone signed in with Discord. Ranked by wins.</p>
+          <div class="tabs" id="boardTabs"></div>
+          <div id="boardBody"></div>
+        </div>
       </div>
     </section>
   </main>

@@ -1,6 +1,6 @@
 // Game Nights Ultimate client. The server is authoritative: this file renders
 // the state it is sent and forwards player actions.
-import { CREATURES, oceanTexture, spriteUrl } from './sprites.js';
+import { CREATURES, oceanTexture, spriteUrl, trophyUrl } from './sprites.js';
 import { RENDERERS, FRAMES } from './games.js';
 import { sfx, isMuted, setMuted, isMusicOn, setMusic } from './sfx.js';
 import * as fx from './fx.js';
@@ -83,7 +83,7 @@ async function loadMe() {
 function renderUserChip() {
   const chip = $('userChip');
   $('signinHint').hidden = Boolean(me.user);
-  if (!me.authEnabled) {
+  if (!me.authEnabled && !me.user) {
     // Tell whoever runs the site exactly what's missing.
     $('signinHint').innerHTML = `Discord sign-in isn't switched on yet. Missing Worker secret${me.authMissing?.length === 1 ? '' : 's'}: <b>${(me.authMissing ?? []).map(esc).join(', ')}</b>. Add them with <code>npx wrangler secret put …</code> (see README).`;
     // Always show the button so it's findable; until setup is done it explains why it can't work yet.
@@ -91,13 +91,14 @@ function renderUserChip() {
     $('loginSetupBtn').onclick = () => toast(`Discord sign-in isn't set up on this server yet. Missing: ${(me.authMissing ?? []).join(', ')}. The site owner adds them with "npx wrangler secret put", then refreshes.`, 9000);
     return;
   }
-  $('signinHint').textContent = 'Sign in with Discord to get onto the global leaderboard.';
+  $('signinHint').textContent = 'Sign in with Discord to earn season points, win trophies and get on the global leaderboard.';
   if (!me.user) {
     const next = encodeURIComponent(location.pathname + location.search);
     chip.innerHTML = `<a class="pill discord" href="/auth/discord?next=${next}">Sign in with Discord</a>`;
     return;
   }
-  chip.innerHTML = `<button class="pill" id="logoutBtn" title="Sign out"><img src="${esc(me.user.avatar)}" alt="">${esc(me.user.name)} ×</button>`;
+  const cups = me.trophies?.length ? `<span class="cups">🏆${me.trophies.length}</span>` : '';
+  chip.innerHTML = `<button class="pill" id="logoutBtn" title="Sign out"><img src="${esc(me.user.avatar)}" alt="">${esc(me.user.name)}${cups} ×</button>`;
   $('logoutBtn').onclick = async () => {
     await fetch('/auth/logout', { method: 'POST' });
     location.reload();
@@ -418,7 +419,8 @@ function finalPanel(h) {
       <li data-place="${r.place}" class="${r.id === s.you ? 'me' : ''}"><img class="mini" src="${spriteUrl(h.look(r.id))}" alt="">
       <span class="name">${esc(r.name)}</span><span class="score">${s.game?.money ? '◆ ' : ''}${r.score}</span></li>`).join('')}</ol>
     ${extra}
-    <p class="note">${f.ranked ? 'This game counts on the <b>global leaderboard</b> for players signed in with Discord.' : 'Games with fewer than 3 players don\'t count on the global leaderboard.'}</p>
+    ${f.season?.[s.you] ? `<p class="season-gain">🏆 +${f.season[s.you]} season points!</p>` : ''}
+    <p class="note">${f.ranked ? `This game counts on the <b>global leaderboard</b> and this month's <b>season</b> for players signed in with Discord.${!me.user && me.authEnabled ? ' Sign in to earn season points and win trophies!' : ''}` : 'Games with fewer than 3 players don\'t count on the global leaderboard or the season.'}</p>
     ${h.isHost
       ? `<div class="btn-row"><button class="btn primary" data-send='{"type":"start"}'>Play again</button><button class="btn" data-send='{"type":"lobby"}'>Pick another game</button></div>`
       : '<p class="waiting">Waiting for the host</p>'}
@@ -588,6 +590,10 @@ requestAnimationFrame(tick);
 
 let boardGame = 'all';
 async function renderBoard() {
+  for (const b of $('boardMode').querySelectorAll('[data-mode]')) b.classList.toggle('primary', b.dataset.mode === boardMode);
+  $('seasonView').hidden = boardMode !== 'season';
+  $('alltimeView').hidden = boardMode !== 'alltime';
+  if (boardMode === 'season') return renderSeason();
   if (!catalog.length) await loadCatalog();
   $('boardTabs').innerHTML = [{ id: 'all', name: 'All games' }, ...catalog]
     .map((g) => `<button class="btn ${g.id === boardGame ? 'primary' : ''}" data-game="${g.id}">${esc(g.name)}</button>`).join('');
@@ -598,11 +604,115 @@ async function renderBoard() {
     $('boardBody').innerHTML = `<p class="note">No ranked games yet. ${me.authEnabled ? 'Sign in with Discord and play a game with 3+ people to get on the board.' : ''}</p>`;
     return;
   }
-  $('boardBody').innerHTML = `<table class="table"><thead><tr><th>#</th><th>Player</th><th>Wins</th><th>Games</th><th>Win %</th><th>Best</th></tr></thead><tbody>
+  $('boardBody').innerHTML = `<table class="table"><thead><tr><th>#</th><th>Player</th><th>Wins</th><th>Games</th><th>Win %</th><th>🏆</th></tr></thead><tbody>
     ${data.rows.map((r, i) => `<tr class="${me.user?.id === r.id ? 'me' : ''}"><td>${i + 1}</td>
       <td><span class="who">${r.avatar ? `<img src="${esc(r.avatar)}" alt="">` : ''}${esc(r.name)}</span></td>
-      <td>${r.wins}</td><td>${r.games}</td><td>${Math.round((r.wins / r.games) * 100)}%</td><td>${r.best}</td></tr>`).join('')}
+      <td>${r.wins}</td><td>${r.games}</td><td>${Math.round((r.wins / r.games) * 100)}%</td><td>${r.trophies ? `${r.trophies}${r.golds ? ` <span class="gold">(${r.golds}★)</span>` : ''}` : '—'}</td></tr>`).join('')}
   </tbody></table>`;
+}
+
+// ---- seasons & trophies -------------------------------------------------------------
+
+const PLACE_NAMES = { 1: 'Gold', 2: 'Silver', 3: 'Bronze' };
+let boardMode = 'season';
+let seasonId = '';
+let seasonData = null;
+
+$('boardMode').addEventListener('click', (e) => {
+  const b = e.target.closest('[data-mode]');
+  if (!b) return;
+  boardMode = b.dataset.mode;
+  renderBoard();
+});
+
+async function renderSeason() {
+  const view = $('seasonView');
+  if (!seasonData || seasonData.season.id !== (seasonId || seasonData.season.id)) view.innerHTML = '<p class="waiting">Loading</p>';
+  try { seasonData = await (await fetch(`/api/season?season=${seasonId}`)).json(); } catch { view.innerHTML = '<p class="note">Couldn\'t load the season.</p>'; return; }
+  const { season, rows, past } = seasonData;
+  const options = [`<option value="">This season</option>`, ...past.map((p) => `<option value="${p.id}" ${p.id === seasonId ? 'selected' : ''}>${esc(p.nickname)} · ${esc(p.name)}</option>`)].join('');
+  const table = rows.length
+    ? `<table class="table season-table"><thead><tr><th>#</th><th>Player</th><th>Points</th><th>Games</th><th>Wins</th></tr></thead><tbody>
+      ${rows.map((r) => `<tr class="${me.user?.id === r.id ? 'me' : ''} ${r.place <= 3 ? `podium p${r.place}` : ''}">
+        <td>${r.place <= 3 ? `<img class="cup-icon" src="${trophyUrl(r.place)}" alt="${PLACE_NAMES[r.place]}">` : r.place}</td>
+        <td><span class="who">${r.avatar ? `<img src="${esc(r.avatar)}" alt="">` : ''}${esc(r.name)}</span></td>
+        <td class="pts">${r.points}</td><td>${r.games}</td><td>${r.wins}</td></tr>`).join('')}</tbody></table>`
+    : `<p class="note center">${season.current ? 'No ranked games yet this season. Be the first on the board!' : 'Nobody played ranked games that season.'}</p>`;
+
+  const cabinet = me.user
+    ? `<div class="section"><h3>YOUR TROPHY CABINET</h3>${me.trophies?.length
+        ? `<div class="cabinet">${me.trophies.map((t) => `<button class="card cab" type="button" data-trophy="${t.id}"><img src="${trophyUrl(t.place)}" alt=""><b>${PLACE_NAMES[t.place]}</b><span>${esc(t.nickname)}</span><span class="muted">${esc(t.name)}</span></button>`).join('')}</div>`
+        : '<p class="note">No trophies yet. Finish a season in the top 3 to win one!</p>'}</div>`
+    : `<p class="note">${me.authEnabled ? 'Sign in with Discord (top right) to earn season points and win trophies.' : 'Season points and trophies need Discord sign-in, which isn\'t set up on this server yet.'}</p>`;
+
+  $('seasonView').innerHTML = `
+    <div class="season-hero">
+      <div class="trophy-row">${[2, 1, 3].map((p) => `<button class="trophy-btn p${p}" type="button" data-preview="${p}" title="See the ${PLACE_NAMES[p]} trophy in 3D"><img src="${trophyUrl(p)}" alt=""><span>${PLACE_NAMES[p]}</span></button>`).join('')}</div>
+      <span class="eyebrow">${season.current ? 'This season' : 'Final standings'}</span>
+      <h3 class="season-name">${esc(season.nickname)} Season</h3>
+      <p class="muted">${esc(season.name)}${season.current ? ` · <span class="countdown" data-ends="${season.end}"></span>` : ''}</p>
+      <p class="tiny muted">Top 3 at the end of the month win a trophy. Tap one to see it in 3D.</p>
+    </div>
+    <label class="field season-pick"><span>Season</span><select id="seasonSelect">${options}</select></label>
+    ${table}
+    <p class="note">Every ranked game (3+ players) earns points: <b>2 × (players − your place + 1)</b>. Winning a 6-player game is worth 12, last place still gets 2.</p>
+    ${cabinet}`;
+  tickCountdown();
+}
+
+$('seasonView').addEventListener('change', (e) => {
+  if (e.target.id === 'seasonSelect') { seasonId = e.target.value; renderSeason(); }
+});
+$('seasonView').addEventListener('click', (e) => {
+  const preview = e.target.closest('[data-preview]');
+  if (preview) {
+    const place = Number(preview.dataset.preview);
+    const s = seasonData.season;
+    showTrophy({ place, seasonName: s.name, playerName: me.user ? `${me.user.name}?` : 'Could be you!', title: `${PLACE_NAMES[place].toUpperCase()} TROPHY`, subtitle: `${s.nickname} Season prize · ${['', '1st', '2nd', '3rd'][place]} place` });
+  }
+  const cab = e.target.closest('[data-trophy]');
+  if (cab) {
+    const t = me.trophies.find((x) => String(x.id) === cab.dataset.trophy);
+    if (t) showTrophy({ place: t.place, seasonName: t.name, playerName: me.user.name, title: `${PLACE_NAMES[t.place].toUpperCase()} TROPHY`, subtitle: `${t.nickname} Season · ${t.points} points` });
+  }
+});
+
+function tickCountdown() {
+  const el = document.querySelector('.countdown[data-ends]');
+  if (!el) return;
+  const left = Math.max(0, Number(el.dataset.ends) - Date.now());
+  const d = Math.floor(left / 86400e3);
+  const h = Math.floor((left % 86400e3) / 3600e3);
+  const m = Math.floor((left % 3600e3) / 60e3);
+  const sec = Math.floor((left % 60e3) / 1000);
+  el.textContent = left ? `ends in ${d ? `${d}d ` : ''}${h}h ${m}m ${d ? '' : `${sec}s`}` : 'ending now!';
+}
+setInterval(tickCountdown, 1000);
+
+async function showTrophy(opts, { celebrate = false } = {}) {
+  sfx.whoosh();
+  if (celebrate) { sfx.victory(); fx.fireworks(4); fx.flash('#ffe066'); }
+  else later(500, () => sfx.ding());
+  try {
+    const { openTrophy } = await import('./trophy3d.js');
+    openTrophy(opts);
+  } catch (err) {
+    console.error(err);
+    toast(`${opts.title}: ${opts.subtitle}`, 5000);
+  }
+}
+const later = (ms, fn) => setTimeout(fn, ms);
+
+// A trophy you haven't seen yet pops up with fireworks the next time you visit.
+function celebrateNewTrophies() {
+  if (!me.trophies?.length) return;
+  let seen = [];
+  try { seen = JSON.parse(store.get('gn:trophiesSeen') || '[]'); } catch {}
+  const fresh = me.trophies.filter((t) => !seen.includes(t.id));
+  store.set('gn:trophiesSeen', JSON.stringify(me.trophies.map((t) => t.id)));
+  const t = fresh.sort((a, b) => a.place - b.place)[0];
+  if (!t) return;
+  showTrophy({ place: t.place, seasonName: t.name, playerName: me.user.name, title: 'YOU WON A TROPHY!', subtitle: `${t.nickname} Season · ${PLACE_NAMES[t.place]} · ${t.points} points` }, { celebrate: true });
 }
 $('boardTabs').addEventListener('click', (e) => {
   const b = e.target.closest('[data-game]');
@@ -631,6 +741,7 @@ function banner(text) {
 // ---- boot -------------------------------------------------------------------------
 
 await Promise.all([loadMe(), loadCatalog()]);
+celebrateNewTrophies();
 const params = new URLSearchParams(location.search);
 if (params.get('login') === 'failed') {
   const why = {

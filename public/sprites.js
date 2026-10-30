@@ -240,6 +240,25 @@ const SPRITES = {
       '.....OOOOOOOOOOOOOO.....',
     ],
   },
+  trophy: {
+    palette: { B: '#ffc93c', L: '#fff1a8', D: '#c98a12' },
+    rows: [
+      '..OOOOOOOOOO..',
+      'OOBLLLLLLLLBOO',
+      'OBOBLLLBBBBOBO',
+      'OBOBLBBBBBBOBO',
+      'OBOBLBBBBBBOBO',
+      '.OOBBBBBBBBOO.',
+      '..OBBBBBBBDO..',
+      '...OBBBBBDO...',
+      '....ODBBDO....',
+      '.....OBDO.....',
+      '.....OBDO.....',
+      '...OOOOOOOO...',
+      '...OBBBBBDO...',
+      '..OOOOOOOOOO..',
+    ],
+  },
   coral: {
     palette: { B: '#ff4f6d', L: '#ff9aab', D: '#b8263f' },
     rows: [
@@ -279,8 +298,16 @@ const cache = new Map();
 
 // Data URL for a sprite at 1px per cell; scale it up with CSS
 // (image-rendering: pixelated keeps it crisp).
-export function spriteUrl(name, { dim = false } = {}) {
-  const key = `${name}${dim ? ':dim' : ''}`;
+export const TROPHY_PALETTES = {
+  1: { B: '#ffc93c', L: '#fff1a8', D: '#c98a12' },
+  2: { B: '#c9d3de', L: '#ffffff', D: '#8a96a6' },
+  3: { B: '#d0844a', L: '#f4b483', D: '#8f4f22' },
+};
+
+export const trophyUrl = (place) => spriteUrl('trophy', { palette: TROPHY_PALETTES[place] ?? TROPHY_PALETTES[1], key: `trophy${place}` });
+
+export function spriteUrl(name, { dim = false, palette: override = null, key: customKey = null } = {}) {
+  const key = `${customKey ?? name}${dim ? ':dim' : ''}`;
   if (cache.has(key)) return cache.get(key);
   const sprite = SPRITES[name] ?? SPRITES.fish;
   const h = sprite.rows.length;
@@ -289,7 +316,7 @@ export function spriteUrl(name, { dim = false } = {}) {
   canvas.width = w;
   canvas.height = h;
   const g = canvas.getContext('2d');
-  const palette = { O: OUTLINE, W: '#ffffff', K: OUTLINE, P: '#ff8fb1', ...sprite.palette };
+  const palette = { O: OUTLINE, W: '#ffffff', K: OUTLINE, P: '#ff8fb1', ...sprite.palette, ...(override ?? {}) };
   sprite.rows.forEach((row, y) => {
     [...row].forEach((ch, x) => {
       if (ch === '.' || !palette[ch]) return;

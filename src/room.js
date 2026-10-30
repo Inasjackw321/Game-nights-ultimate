@@ -1,6 +1,7 @@
 import { DurableObject } from 'cloudflare:workers';
 import { CATALOG, GAME_BY_ID, defaultSettings } from './games/index.js';
 import { GRACE_MS } from './games/kit.js';
+import { seasonPoints } from './seasons.js';
 
 const MAX_PLAYERS = 10;
 const MAX_NAME = 16;
@@ -261,7 +262,11 @@ export class Room extends DurableObject {
     }
 
     const ranked = ranking.length >= MIN_RANKED_PLAYERS;
-    s.final = { gameId: s.gameId, ranking, ranked };
+    // Season points for signed-in players (guests don't have a season record).
+    const season = ranked
+      ? Object.fromEntries(ranking.filter((r) => s.players[r.id]?.userId).map((r) => [r.id, seasonPoints(r.place, ranking.length)]))
+      : {};
+    s.final = { gameId: s.gameId, ranking, ranked, season };
     s.phase = 'final';
 
     const results = ranking

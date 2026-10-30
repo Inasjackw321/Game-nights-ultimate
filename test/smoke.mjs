@@ -159,6 +159,7 @@ host.send({ type: 'settings', key: 'dice', value: 2 });
 await host.until((s) => s.gameId === 'dice' && s.settings.dice === 2, 'dice picked');
 host.send({ type: 'start' });
 await host.until((s) => s.phase === 'playing', 'dice start');
+await ann.until((s) => s.phase === 'playing' && s.gameId === 'dice', 'ann sees dice start');
 let leftHost = false;
 const dicePlayers = () => (leftHost ? [ann, bo, cyBack] : players);
 while (ann.state.phase === 'playing') {
@@ -190,6 +191,47 @@ assert.ok(!board.rows.some((r) => r.name === 'Bo'), 'guests are not on the board
 const dc = await (await fetch(`${BASE}/api/leaderboard?game=deepcut`)).json();
 assert.ok(dc.rows.some((r) => r.id === ann.user.id));
 console.log('leaderboard:', board.rows.filter((r) => [host.user.id, ann.user.id].includes(r.id)).map((r) => `${r.name} ${r.wins}W/${r.games}G`).join(', '));
+
+// ---- Seasons & trophies ---------------------------------------------------------------
+const season = await (await fetch(`${BASE}/api/season`)).json();
+assert.equal(season.season.current, true);
+const hostSeason = season.rows.find((r) => r.id === host.user.id);
+assert.ok(hostSeason && hostSeason.points >= 6 && hostSeason.games === 3, 'ranked games earn season points');
+console.log(`season ${season.season.name} (${season.season.nickname}):`, season.rows.filter((r) => [host.user.id, ann.user.id].includes(r.id)).map((r) => `${r.place}. ${r.name} ${r.points}pts`).join(', '));
+
+// A finished season awards trophies to its top 3. Uses the local-only
+// TEST_HOOKS endpoints to record results in a random past month (a fresh one
+// each run, since local dev keeps its database between runs).
+const lastMonth = new Date(Date.UTC(2001 + Math.floor(Math.random() * 20), Math.floor(Math.random() * 12), 15));
+const champs = ['G', 'S', 'B', 'X'].map((tag, i) => ({ id: `8${stamp}${i}`, name: `Champ${tag}`, avatar: null }));
+for (const u of champs) {
+  const res = await fetch(`${BASE}/api/test/user`, { method: 'POST', body: JSON.stringify(u) });
+  assert.equal(res.status, 200, 'TEST_HOOKS=1 must be set in .dev.vars for the smoke test');
+}
+for (let g = 0; g < 3; g++) {
+  await fetch(`${BASE}/api/test/record`, { method: 'POST', body: JSON.stringify({
+    game: 'blitz', players: 4, playedAt: lastMonth.getTime() - g * 3600e3, finalize: g === 2,
+    results: champs.map((u, place) => ({ userId: u.id, score: 1000 - place * 100, place: place + 1 })),
+  }) });
+}
+const prevId = `${lastMonth.getUTCFullYear()}-${String(lastMonth.getUTCMonth() + 1).padStart(2, '0')}`;
+const prev = await (await fetch(`${BASE}/api/season?season=${prevId}`)).json();
+assert.equal(prev.season.finalized, true);
+assert.ok(prev.past.some((p) => p.id === prevId), 'finished season is listed');
+for (const [i, place] of [[0, 1], [1, 2], [2, 3]]) {
+  const prof = await (await fetch(`${BASE}/api/profile?id=${champs[i].id}`)).json();
+  const t = prof.trophies.find((x) => x.season === prevId);
+  assert.ok(t, `${champs[i].name} got a trophy`);
+  assert.equal(t.place, place);
+  assert.equal(t.points, prev.rows.find((r) => r.id === champs[i].id).points, 'trophy records the final season points');
+}
+const fourth = await (await fetch(`${BASE}/api/profile?id=${champs[3].id}`)).json();
+assert.equal(fourth.trophies.length, 0, '4th place gets no trophy');
+// The winner sees it via /api/me when signed in.
+const champCookie = `gn_session=${await sign({ ...champs[0], exp: Date.now() + 3600e3 }, SECRET)}`;
+const champMe = await (await fetch(`${BASE}/api/me`, { headers: { Cookie: champCookie } })).json();
+assert.equal(champMe.trophies[0]?.place, 1);
+console.log(`trophies for ${prev.season.name}:`, prev.rows.slice(0, 4).map((r) => `${r.place}. ${r.name} ${r.points}pts`).join(', '));
 
 for (const b of [ann, bo, cyBack]) b.close();
 console.log('smoke test passed');
