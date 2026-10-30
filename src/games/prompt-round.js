@@ -1,0 +1,134 @@
+// Deep Cut and Hive Mind share a round structure: a prompt, a timed free-text
+// answer, (Deep Cut only) host review of off-list answers, then a reveal.
+// They differ only in how matching answers are scored.
+import { PROMPTS } from '../content/prompts.js';
+import { classify, clusterUnknowns, compilePrompt } from '../match.js';
+import { addPoints, clearTimer, deal, everyoneIn, marksFor, setTimer, tooLate, zeroScores } from './kit.js';
+
+const MAX_ANSWER = 40;
+const compiled = new Map(PROMPTS.map((p) => [p.id, compilePrompt(p)]));
+export const compiledPrompt = (id) => compiled.get(id);
+
+export function promptGame({ meta, review, score }) {
+  return {
+    meta,
+
+    init(ctx) {
+      const ids = ctx.ids;
+      return {
+        ids,
+        deck: deal(PROMPTS, ctx.settings.rounds, ctx.seen, ctx.rand).map((p) => p.id),
+        round: -1,
+        scores: zeroScores(ids),
+        ...startRound({ round: -1 }, ctx),
+      };
+    },
+
+    action(g, pid, msg, ctx) {
+      const inGame = g.ids.includes(pid);
+      if (msg.type === 'answer') {
+        if (!inGame) return 'You joined mid-game — you can play the next one.';
+        if (g.stage !== 'answer') return 'Answers are closed.';
+        if (tooLate(g, ctx)) return 'Too late — time is up.';
+        if (pid in g.answers) return 'You already locked in an answer.';
+        g.answers[pid] = String(msg.text ?? '').slice(0, MAX_ANSWER);
+        if (everyoneIn(g.ids, g.answers, ctx)) closeAnswers(g, ctx);
+        return;
+      }
+      if (!ctx.isHost(pid)) return 'Only the host can do that.';
+      if (msg.type === 'review' && g.stage === 'review') {
+        if (msg.accept) g.approved[msg.key] = true;
+        else delete g.approved[msg.key];
+        return;
+      }
+      if (msg.type === 'reveal' && g.stage === 'review') return reveal(g, ctx);
+      if (msg.type === 'next' && g.stage === 'reveal') {
+        if (g.round + 1 >= g.deck.length) { g.over = true; return; }
+        Object.assign(g, startRound(g, ctx));
+        return;
+      }
+      return 'Not right now.';
+    },
+
+    timeout(g, ctx) {
+      if (g.stage === 'answer') closeAnswers(g, ctx);
+    },
+
+    view(g, pid, ctx) {
+      const prompt = compiled.get(g.deck[g.round]);
+      const base = {
+        stage: g.stage,
+        title: prompt.text,
+        round: g.round,
+        total: g.deck.length,
+        deadline: g.deadline,
+        duration: g.duration,
+      };
+      if (g.stage === 'answer') {
+        return { ...base, myAnswer: g.answers[pid] ?? null, canPlay: g.ids.includes(pid), marks: marksFor(g.ids, g.answers) };
+      }
+      if (g.stage === 'review') {
+        return {
+          ...base,
+          pending: g.unknowns.length,
+          items: ctx.isHost(pid, { peek: true })
+            ? g.unknowns.map((u) => ({ key: u.key, label: u.label, count: u.players.length, accepted: Boolean(g.approved[u.key]) }))
+            : null,
+        };
+      }
+      return { ...base, result: g.result, last: g.round + 1 >= g.deck.length };
+    },
+  };
+
+  function startRound(g, ctx) {
+    const out = { round: g.round + 1, stage: 'answer', answers: {}, classified: {}, unknowns: [], approved: {}, result: null };
+    setTimer(out, ctx.settings.seconds, ctx);
+    return out;
+  }
+
+  function closeAnswers(g, ctx) {
+    const prompt = compiled.get(g.deck[g.round]);
+    for (const id of g.ids) g.classified[id] = classify(prompt, g.answers[id] ?? '');
+    g.unknowns = clusterUnknowns(g.classified);
+    clearTimer(g);
+    if (review && g.unknowns.length && ctx.hostOnline()) {
+      g.stage = 'review';
+      return;
+    }
+    reveal(g, ctx);
+  }
+
+  function reveal(g, ctx) {
+    const prompt = compiled.get(g.deck[g.round]);
+    const { groups, misses, deltas, extra } = score(g.classified, new Set(Object.keys(g.approved)), prompt, ctx);
+    addPoints(g, deltas);
+    g.result = {
+      groups: groups.map((x) => ({ ...x, players: x.players.map(ctx.name) })),
+      misses: misses.map((m) => ({ ...m, players: m.players.map(ctx.name) })),
+      deltas,
+      ...extra,
+    };
+    g.stage = 'reveal';
+    clearTimer(g);
+  }
+}
+
+// Bucket classified answers into groups of "the same answer". Matched answers
+// group by canonical answer; unknown answers group by cluster key and only
+// count when `countUnknown(key)` says so.
+export function groupAnswers(classified, countUnknown) {
+  const groups = new Map();
+  const misses = new Map();
+  for (const [playerId, c] of Object.entries(classified)) {
+    if (c.kind === 'match' || (c.kind === 'unknown' && countUnknown(c.key))) {
+      const k = c.kind === 'match' ? `m${c.answerId}` : `u${c.key}`;
+      if (!groups.has(k)) groups.set(k, { label: c.label, tier: c.kind === 'match' ? c.tier : null, offList: c.kind === 'unknown', players: [] });
+      groups.get(k).players.push(playerId);
+    } else {
+      const k = c.kind === 'blank' ? '' : c.key;
+      if (!misses.has(k)) misses.set(k, { label: c.kind === 'blank' ? '—' : c.label, reason: c.kind === 'blank' ? 'No answer' : 'Not accepted', players: [] });
+      misses.get(k).players.push(playerId);
+    }
+  }
+  return { groups: [...groups.values()], misses: [...misses.values()] };
+}
