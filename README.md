@@ -1,11 +1,12 @@
 # Game Nights Ultimate
 
-Live party games for up to 10 friends, set on a pixel-art reef. One person makes a room, everyone joins with a 4-letter code on their phone or laptop, and the host picks from ten games. Players sit on rocks in a ring around the anglerfish host.
+**Party Game Night Ultimate**: live pixel-art party games for up to 10 friends. One person makes a room, everyone joins with a 4-letter code on their phone or laptop, and the host picks from eleven games and a world to play in (Coral Reef, Outer Space, Enchanted Forest or Volcano Island). Players sit in a ring around the host character as one of 22 characters (sea creatures, a cat, dog, frog, fox, bunny, panda, chick, penguin, robot, alien, ghost and dragon), with an optional hat.
 
 | Game | Type | How it works |
 | --- | --- | --- |
 | **Deep Cut** | Word | Name something in the category that nobody else will. The game checks your answer instantly (typos forgiven), and if it's not on the list you can try again. Rarer correct answers score more, and duplicates split the points. |
 | **Hive Mind** | Word | The opposite of Deep Cut: score for every player who gives the same answer as you. |
+| **Reef Sketch** | Drawing | One player draws a secret word while everyone else races to guess it. The drawing appears live on every screen, letter hints show up as time runs out, near-misses get a private "so close!", and faster guesses score more (the artist scores for every correct guess). |
 | **Fib Factory** | Bluffing | Write a fake answer to a strange-but-true fact, then try to spot the real one. Score for finding the truth and for every player your lie fools. |
 | **Blitz** | Trivia | Quick-fire multiple choice. Faster correct answers score more. |
 | **Most Likely To** | Social | "Who's most likely to…?" Vote for a player, and score for agreeing with the room. |
@@ -16,6 +17,13 @@ Live party games for up to 10 friends, set on a pixel-art reef. One person makes
 | **Reef Derby** | Casino | Bet play chips on racing sea creatures. The odds are fair, and long shots pay big. |
 
 Casino games use **play chips only**. There is no real money, buying chips, or cashing out.
+
+## Party extras
+
+- **Reactions and soundboard:** emoji reactions float up from your seat, and the soundboard (air horn, ba-dum-tss, applause, crickets, sad trombone) plays for the whole room.
+- **🪩 Disco mode:** anyone can start a short dance party: spotlights, dancing characters and a beat. It has a 20-second cooldown so nobody can spam it.
+- **Hats:** party hat, crown, wizard hat, shades or a bow.
+- **Easter egg:** try poking the host character a few times.
 
 ## Accounts and leaderboards
 

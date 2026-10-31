@@ -154,14 +154,14 @@ export function seatEl(id) {
 }
 
 export function seatPoint(id) {
-  const el = seatEl(id)?.querySelector('.creature');
+  const el = seatEl(id)?.querySelector('.cwrap');
   if (!el) return null;
   const r = el.getBoundingClientRect();
   return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
 }
 
 export function seatAnim(id, name) {
-  const el = seatEl(id)?.querySelector('.creature');
+  const el = seatEl(id)?.querySelector('.cwrap');
   if (!el) return;
   el.classList.remove('hop', 'spin', 'wobble', 'arrive', 'squash');
   void el.offsetWidth;

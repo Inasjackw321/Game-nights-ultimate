@@ -15,6 +15,7 @@ import { handValue, isBlackjack, payout } from '../src/games/blackjack.js';
 import { countFace, isRaise, minRaise } from '../src/games/dice.js';
 import { makeOdds, raceTrack } from '../src/games/derby.js';
 import { BOARD, netWorth, tollFor } from '../src/games/tycoon.js';
+import { guessPoints, isClose, maskWord, MAX_INK_POINTS } from '../src/games/sketch.js';
 
 // Deterministic PRNG so failures are reproducible.
 function rng(seed = 1) {
@@ -143,6 +144,43 @@ test('Reef Tycoon: tolls grow with coral and reef networks', () => {
   assert.equal(BOARD.length, 20);
 });
 
+test('Reef Sketch: guessing, hints and close calls', () => {
+  assert.equal(guessPoints(80000, 80000), 500);
+  assert.equal(guessPoints(0, 80000), 100);
+  assert.ok(isClose('jellyfsh', 'jellyfish'));
+  assert.ok(isClose('jelly', 'jellyfish'));
+  assert.ok(!isClose('jellyfish', 'jellyfish'));
+  assert.ok(!isClose('cat', 'whale'));
+  assert.equal(maskWord('hot dog', [0, 1, 2, 4, 5, 6], 0), '___ ___');
+  assert.equal(maskWord('hot dog', [4, 0], 2), 'h__ d__');
+});
+
+test('Reef Sketch: only the artist can draw, and ink is capped', () => {
+  const game = GAME_BY_ID.sketch;
+  const ctx = { now: 1000, settings: defaultSettings(game.meta), seen: [], rand: rng(3), name: (id) => id, online: () => true, isHost: () => true, ids: ['a', 'b', 'c'] };
+  const g = game.init(ctx);
+  const artist = g.drawers[0];
+  const other = g.ids.find((id) => id !== artist);
+  assert.equal(game.ink(g, artist, { k: 's', id: 'x', c: 1, w: 2, p: [1, 2, 3, 4] }), null, 'no drawing while choosing');
+  game.action(g, artist, { type: 'choose', index: 0 }, ctx);
+  assert.equal(g.stage, 'draw');
+  assert.equal(game.view(g, other, ctx).word, null, 'guessers cannot see the word');
+  assert.equal(game.view(g, artist, ctx).word, g.word);
+  assert.equal(game.ink(g, other, { k: 's', id: 'x', c: 1, w: 2, p: [1, 2] }), null, 'guessers cannot draw');
+  assert.deepEqual(game.ink(g, artist, { k: 's', id: 'x', c: 99, w: 9, p: [5000, -3, 10, 20] }), { k: 's', id: 'x', c: 11, w: 4, p: [1000, 0, 10, 20] });
+  assert.ok(game.ink(g, artist, { k: 'a', id: 'x', p: [30, 40] }));
+  assert.equal(game.inkSnapshot(g).strokes[0].p.length, 6);
+  g.inkPoints = MAX_INK_POINTS;
+  assert.equal(game.ink(g, artist, { k: 'a', id: 'x', p: [1, 1] }), null, 'ink is capped');
+  assert.match(game.action(g, artist, { type: 'answer', text: g.word }, ctx), /artist/);
+  assert.equal(game.action(g, other, { type: 'answer', text: 'definitely not it' }, ctx), undefined);
+  assert.equal(g.chat.at(-1).text, 'definitely not it');
+  game.action(g, other, { type: 'answer', text: g.word.toUpperCase() }, ctx);
+  assert.ok(other in g.guessed);
+  assert.match(game.action(g, other, { type: 'answer', text: g.word }, ctx), /already got it/);
+  assert.ok(!g.chat.some((c) => c.text === g.word), 'correct answers never appear in the chat');
+});
+
 // ---- full simulated games for every module --------------------------------
 
 // A tiny fake room: everyone online, time advances when timers expire.
@@ -230,6 +268,11 @@ const bots = {
     if (v.bid && r() < 0.4) return { type: 'liar' };
     const next = minRaise(v.bid);
     return next.qty > v.totalDice ? { type: 'liar' } : { type: 'bid', ...next };
+  },
+  sketch: (v, id, r) => {
+    if (v.stage === 'choose' && v.isDrawer) return { type: 'choose', index: Math.floor(r() * 3) };
+    if (v.stage === 'draw' && !v.isDrawer && !(id in v.guessed) && r() < 0.3) return { type: 'answer', text: r() < 0.4 ? 'fish' : 'nope' };
+    return null;
   },
   tycoon: (v, id, r) => {
     if (v.active !== id) return null;

@@ -7,8 +7,15 @@ const MAX_PLAYERS = 10;
 const MAX_NAME = 16;
 const IDLE_TTL_MS = 6 * 60 * 60 * 1000; // rooms are wiped after 6h with nobody around
 const MIN_RANKED_PLAYERS = 3; // games with fewer players don't count globally
-export const CREATURES = ['crab', 'jelly', 'turtle', 'octopus', 'seahorse', 'eel', 'fish', 'squid', 'ray', 'whale'];
-const REACTION_COUNT = 6; // matches REACTIONS in public/app.js
+export const CREATURES = [
+  'crab', 'jelly', 'turtle', 'octopus', 'seahorse', 'eel', 'fish', 'squid', 'ray', 'whale',
+  'cat', 'dog', 'frog', 'fox', 'bunny', 'panda', 'chick', 'penguin', 'robot', 'alien', 'ghost', 'dragon',
+];
+export const HATS = ['none', 'party', 'crown', 'wizard', 'shades', 'bow'];
+export const THEMES = ['reef', 'space', 'forest', 'volcano'];
+const REACTION_COUNT = 11; // 6 emoji + 5 soundboard sounds, matches public/app.js
+const DISCO_COOLDOWN_MS = 20_000;
+const INK_SAVE_MS = 1500;
 const REACT_COOLDOWN_MS = 400;
 const MAX_RTC_BYTES = 16 * 1024;
 // Pearls for the room's "tonight" leaderboard: 1st, 2nd, 3rd place.
@@ -76,7 +83,39 @@ export class Room extends DurableObject {
       return;
     }
 
-    // Emoji reactions are fire-and-forget: relayed to everyone, never stored.
+    // Live drawing (Reef Sketch): relay each stroke straight to everyone else
+    // and save the drawing every so often, rather than broadcasting whole room
+    // state for every pen movement.
+    if (msg.type === 'ink' || msg.type === 'inkSync') {
+      const s = this.state;
+      const game = s.phase === 'playing' ? GAME_BY_ID[s.gameId] : null;
+      if (!game?.ink || !s.players[pid]) return;
+      if (msg.type === 'inkSync') {
+        const snap = game.inkSnapshot(s.game);
+        this.send(ws, { type: 'ink', v: snap.v, full: snap.strokes });
+        return;
+      }
+      const op = game.ink(s.game, pid, msg.op);
+      if (!op) return;
+      for (const sock of this.ctx.getWebSockets()) if (sock !== ws) this.send(sock, { type: 'ink', v: s.game.inkVersion, op });
+      this.saveSoon();
+      return;
+    }
+
+    // Disco mode: anyone can start a short dance party (with a room-wide cooldown).
+    if (msg.type === 'disco') {
+      const now = Date.now();
+      if (!this.state.players[pid]) return;
+      if (now - (this.lastDisco ?? 0) < DISCO_COOLDOWN_MS) {
+        this.send(ws, { type: 'error', message: `The disco ball is recharging (${Math.ceil((DISCO_COOLDOWN_MS - (now - this.lastDisco)) / 1000)}s).` });
+        return;
+      }
+      this.lastDisco = now;
+      for (const sock of this.ctx.getWebSockets()) this.send(sock, { type: 'disco', pid, name: this.state.players[pid].name });
+      return;
+    }
+
+    // Emoji reactions and soundboard sounds are fire-and-forget: relayed to everyone, never stored.
     if (msg.type === 'react') {
       const r = Number(msg.r);
       const now = Date.now();
@@ -165,6 +204,12 @@ export class Room extends DurableObject {
       return;
     }
 
+    if (msg.type === 'hat') {
+      if (!HATS.includes(msg.hat)) return 'Unknown hat.';
+      player.hat = msg.hat;
+      return;
+    }
+
     if (msg.type === 'look') {
       if (!CREATURES.includes(msg.look)) return 'Unknown creature.';
       if (Object.values(s.players).some((p) => p.id !== pid && p.look === msg.look)) return 'Someone already picked that one.';
@@ -172,7 +217,7 @@ export class Room extends DurableObject {
       return;
     }
 
-    if (s.phase === 'playing' && !['end', 'kick'].includes(msg.type)) {
+    if (s.phase === 'playing' && !['end', 'kick', 'theme'].includes(msg.type)) {
       const err = GAME_BY_ID[s.gameId].action(s.game, pid, msg, this.makeCtx());
       return err;
     }
@@ -190,6 +235,11 @@ export class Room extends DurableObject {
         s.gameId = game.meta.id;
         s.settings = defaultSettings(game.meta);
         s.phase = 'lobby';
+        return;
+      }
+      case 'theme': {
+        if (!THEMES.includes(msg.theme)) return 'Unknown world.';
+        s.theme = msg.theme;
         return;
       }
       case 'settings': {
@@ -333,6 +383,15 @@ export class Room extends DurableObject {
     return Date.now() - this.state.lastActive < IDLE_TTL_MS || this.ctx.getWebSockets().length > 0;
   }
 
+  // Debounced save for high-frequency updates (drawing).
+  saveSoon() {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      if (this.state) this.ctx.storage.put('state', this.state);
+    }, INK_SAVE_MS);
+  }
+
   async save() {
     await this.ctx.storage.put('state', this.state);
     await this.scheduleAlarm();
@@ -378,12 +437,14 @@ export class Room extends DurableObject {
       catalog: CATALOG,
       gameId: s.gameId,
       settings: s.settings,
+      theme: s.theme ?? 'reef',
       players: Object.values(s.players)
         .sort((a, b) => a.joinedAt - b.joinedAt)
         .map((p) => ({
           id: p.id,
           name: p.name,
           look: p.look,
+          hat: p.hat ?? 'none',
           avatar: p.avatar,
           discord: Boolean(p.userId),
           voice: Boolean(p.voice && online.has(p.id)),
@@ -411,6 +472,7 @@ function freshState(code) {
     game: null,
     final: null,
     night: {},
+    theme: 'reef',
     lastActive: Date.now(),
   };
 }

@@ -1,6 +1,8 @@
 // Game Nights Ultimate client. The server is authoritative: this file renders
 // the state it is sent and forwards player actions.
-import { CREATURES, oceanTexture, spriteUrl, trophyUrl } from './sprites.js';
+import { CREATURES, HATS, oceanTexture, spriteUrl, trophyUrl } from './sprites.js';
+import { THEMES, THEME_IDS } from './themes.js';
+import * as sketchpad from './sketchpad.js';
 import { RENDERERS, FRAMES } from './games.js';
 import { sfx, isMuted, setMuted, isMusicOn, setMusic } from './sfx.js';
 import * as fx from './fx.js';
@@ -8,6 +10,14 @@ import { onState } from './director.js';
 import * as voice from './voice.js';
 
 export const REACTIONS = ['😂', '🔥', '😱', '👏', '💀', '🐟'];
+// Soundboard buttons share the reaction channel (indices 6–10): everyone hears them.
+const SOUNDS = [
+  { icon: '📯', label: 'Air horn', play: () => sfx.airhorn() },
+  { icon: '🥁', label: 'Ba-dum-tss', play: () => sfx.rimshot() },
+  { icon: '🙌', label: 'Applause', play: () => sfx.applause() },
+  { icon: '🦗', label: 'Crickets', play: () => sfx.crickets() },
+  { icon: '🎺', label: 'Sad trombone', play: () => sfx.sadTrombone() },
+];
 
 const $ = (id) => document.getElementById(id);
 const store = {
@@ -38,9 +48,7 @@ export const serverNow = () => Date.now() + clockOffset;
 
 // ---- decoration -----------------------------------------------------------
 
-document.body.style.backgroundImage = `url(${oceanTexture()})`;
 $('brandFish').src = spriteUrl('host');
-$('hostFish').src = spriteUrl('host');
 for (let i = 0; i < 14; i++) {
   const b = document.createElement('i');
   b.style.left = `${Math.random() * 100}%`;
@@ -51,27 +59,65 @@ for (let i = 0; i < 14; i++) {
   b.style.width = b.style.height = `${s}px`;
   $('bubbles').append(b);
 }
-$('stageDeco').innerHTML = [
-  ['coral', '2%', 48], ['kelp', '9%', 36], ['kelp', '88%', 40], ['coral', '93%', 40],
-].map(([n, left, h]) => `<img src="${spriteUrl(n)}" style="left:${left};height:${h}px" alt="">`).join('');
-$('heroScene').innerHTML = ['crab', 'jelly', 'octopus', 'host', 'seahorse', 'turtle', 'fish']
+$('heroScene').innerHTML = ['cat', 'octopus', 'robot', 'host', 'frog', 'dragon', 'penguin']
   .map((n, i) => `<img src="${spriteUrl(n)}" alt="" style="left:${4 + i * 13.5}%;height:${n === 'host' ? 96 : 52}px;animation-delay:${-i * 0.4}s;bottom:${n === 'host' ? 30 : (i % 2) * 22}px">`).join('');
 
-// Every so often a little fish swims through the reef behind the players.
+// ---- worlds (themes) ----------------------------------------------------------
+
+let themeId = null;
+const textures = {};
+function applyTheme(id) {
+  const t = THEMES[id] ? id : 'reef';
+  if (t === themeId) return;
+  themeId = t;
+  const theme = THEMES[t];
+  store.set('gn:theme', t);
+  document.body.dataset.theme = t;
+  textures[t] ??= oceanTexture(theme.shades, theme.streak);
+  document.body.style.backgroundImage = `url(${textures[t]})`;
+  $('hostFish').src = spriteUrl(theme.host);
+  $('stageDeco').innerHTML = theme.deco.map(([n, left, h]) => `<img src="${spriteUrl(n)}" style="left:${left};height:${h}px" alt="">`).join('');
+  for (const rock of document.querySelectorAll('.seat .rock')) rock.src = rockUrl();
+}
+const rockUrl = () => {
+  const theme = THEMES[themeId] ?? THEMES.reef;
+  return theme.rock ? spriteUrl('rock', { palette: theme.rock, key: `rock-${themeId}` }) : spriteUrl('rock');
+};
+applyTheme(store.get('gn:theme') || 'reef');
+
+// Every so often something wanders through the world behind the players
+// (and now and then something big, like a shark).
 setInterval(() => {
-  // Swimmers live in the clipped decoration layer so they never widen the page.
+  // Wanderers live in the clipped decoration layer so they never widen the page.
   const stage = $('stageDeco');
   if (!stage || $('screen-room').hidden || document.hidden) return;
+  const theme = THEMES[themeId] ?? THEMES.reef;
+  const big = Math.random() < 0.15;
   const el = document.createElement('img');
   const left = Math.random() < 0.5;
-  el.src = spriteUrl(['fish', 'fish', 'ray', 'eel', 'whale', 'jelly'][(Math.random() * 6) | 0]);
-  el.className = `swimmer ${left ? 'left' : ''}`;
+  el.src = spriteUrl(big ? theme.big : theme.wanderers[(Math.random() * theme.wanderers.length) | 0]);
+  el.className = `swimmer ${left ? 'left' : ''} ${big ? 'big' : ''}`;
   el.style.top = `${10 + Math.random() * 70}%`;
-  el.style.height = `${14 + Math.random() * 16}px`;
-  el.style.animationDuration = `${12 + Math.random() * 10}s`;
+  el.style.height = `${big ? 44 : 14 + Math.random() * 16}px`;
+  el.style.animationDuration = `${big ? 9 : 12 + Math.random() * 10}s`;
   stage.prepend(el);
   setTimeout(() => el.remove(), 23000);
 }, 7000);
+
+// Easter egg: poke the host enough and it gets cross.
+let pokes = 0;
+let pokeTimer;
+$('hostFish').addEventListener('click', () => {
+  pokes += 1;
+  clearTimeout(pokeTimer);
+  pokeTimer = setTimeout(() => { pokes = 0; }, 2500);
+  sfx.poke(Math.min(pokes, 10));
+  fx.hostAnim(pokes >= 7 ? 'spin' : 'chomp');
+  const r = $('hostFish').getBoundingClientRect();
+  fx.bubbles(r.left + r.width / 2, r.top + r.height / 2, 6 + pokes * 2);
+  if (pokes === 7) { fx.banner('STOP POKING ME!', { color: 'var(--red)', big: true }); fx.shake(2); sfx.boom(); }
+  if (pokes === 12) { fx.banner('FINE. HAVE A PARTY.', { color: 'var(--pink)' }); fx.confetti(1); sfx.fanfare(); pokes = 0; }
+});
 
 // ---- account --------------------------------------------------------------
 
@@ -142,15 +188,25 @@ function open() {
       const prev = state;
       state = msg;
       catalog = msg.catalog;
+      applyTheme(state.theme);
       route();
       voice.sync(state);
       renderVoiceBar();
       if (location.hash !== '#leaderboard') requestAnimationFrame(() => onState(prev, state));
     } else if (msg.type === 'rtc') {
       voice.onSignal(msg.from, msg.data);
+    } else if (msg.type === 'ink') {
+      sketchpad.onInk(msg);
+    } else if (msg.type === 'disco') {
+      startDisco(msg.name);
     } else if (msg.type === 'react') {
       const pt = fx.seatPoint(msg.pid);
+      const sound = SOUNDS[msg.r - REACTIONS.length];
       if (pt && REACTIONS[msg.r]) { fx.reaction(pt.x, pt.y - 20, REACTIONS[msg.r]); sfx.react(msg.r); fx.seatAnim(msg.pid, 'hop'); }
+      if (pt && sound) { fx.reaction(pt.x, pt.y - 20, sound.icon); sound.play(); fx.seatAnim(msg.pid, 'spin'); }
+    } else if (msg.type === 'error' && /so close/i.test(msg.message)) {
+      sfx.alert();
+      toast(`🔥 ${msg.message}`);
     } else if (msg.type === 'error') {
       sfx.buzz();
       // Bounced answer: shake the box and select the text so retyping is instant.
@@ -321,7 +377,7 @@ function renderSeats(view) {
     if (!el) {
       el = document.createElement('div');
       el.dataset.id = p.id;
-      el.innerHTML = `<span class="overlay"></span><img class="creature" alt=""><img class="rock" src="${spriteUrl('rock')}" alt=""><span class="pname"></span><span class="pstat"></span>`;
+      el.innerHTML = `<span class="overlay"></span><span class="cwrap"><img class="creature" alt=""><img class="hat" alt="" hidden></span><img class="rock" src="${rockUrl()}" alt=""><span class="pname"></span><span class="pstat"></span>`;
       el.style.left = `${x}%`;
       el.style.top = `${y}%`;
       seats.append(el);
@@ -333,6 +389,13 @@ function renderSeats(view) {
     const src = spriteUrl(p.look, { dim: !p.connected });
     const img = el.querySelector('.creature');
     if (img.getAttribute('src') !== src) img.setAttribute('src', src);
+    const hat = el.querySelector('.hat');
+    const hatSrc = p.hat && p.hat !== 'none' ? spriteUrl(`hat-${p.hat}`) : '';
+    if ((hat.getAttribute('src') ?? '') !== hatSrc) {
+      if (hatSrc) hat.setAttribute('src', hatSrc); else hat.removeAttribute('src');
+      hat.hidden = !hatSrc;
+      hat.className = `hat ${p.hat ?? ''}`;
+    }
     setHtml(el.querySelector('.overlay'), crown + tag + mark + vbadge);
     setHtml(el.querySelector('.pname'), avatar + esc(p.name));
     setHtml(el.querySelector('.pstat'), stat);
@@ -345,11 +408,11 @@ function setHtml(el, html) {
 }
 
 function bubble(title, eyebrow = '', fresh = false) {
-  return `<div class="say"><img src="${spriteUrl('host')}" alt=""><div class="bubble ${fresh ? 'enter' : ''}">${eyebrow ? `<span class="eyebrow">${esc(eyebrow)}</span>` : ''}${esc(title)}</div></div>`;
+  return `<div class="say"><img src="${spriteUrl((THEMES[themeId] ?? THEMES.reef).host)}" alt=""><div class="bubble ${fresh ? 'enter' : ''}">${eyebrow ? `<span class="eyebrow">${esc(eyebrow)}</span>` : ''}${esc(title)}</div></div>`;
 }
 
 function gameCard(g, { selected = false, button = false } = {}) {
-  const icon = { deepcut: 'octopus', hivemind: 'fish', fib: 'squid', blitz: 'eel', likely: 'crab', whoami: 'jelly', tycoon: 'whale', blackjack: 'ray', dice: 'turtle', derby: 'seahorse' }[g.id] ?? 'fish';
+  const icon = { deepcut: 'octopus', hivemind: 'fish', fib: 'squid', blitz: 'eel', likely: 'crab', whoami: 'jelly', tycoon: 'whale', sketch: 'cat', blackjack: 'ray', dice: 'turtle', derby: 'seahorse' }[g.id] ?? 'fish';
   const tag = button ? 'button' : 'div';
   const attrs = button ? ` type="button" data-send='${JSON.stringify({ type: 'pick', game: g.id })}'` : '';
   return `<${tag} class="card ${selected ? 'selected' : ''}"${attrs}>
@@ -389,8 +452,14 @@ function lobbyPanel(h) {
          ${enough ? '' : `<p class="note center">${esc(g.name)} needs ${g.minPlayers}+ players online. Share the code!</p>`}`
       : '<p class="waiting">Waiting for the host to start</p>'}
     <div class="section">
-      <h3>YOUR CREATURE</h3>
-      <div class="creature-pick">${CREATURES.map((c) => `<button type="button" class="${c === mine ? 'mine' : ''}" ${taken.has(c) ? 'disabled' : ''} data-send='${JSON.stringify({ type: 'look', look: c })}' aria-label="${c}"><img src="${spriteUrl(c)}" alt=""></button>`).join('')}</div>
+      <h3>${h.isHost ? 'PICK A WORLD' : 'WORLD'}</h3>
+      <div class="worlds">${THEME_IDS.map((t) => `<button type="button" class="btn world ${t === (s.theme ?? 'reef') ? 'on' : ''}" data-world="${t}" ${h.isHost ? `data-send='${JSON.stringify({ type: 'theme', theme: t })}'` : 'disabled'}>${THEMES[t].icon} ${esc(THEMES[t].name)}</button>`).join('')}</div>
+    </div>
+    <div class="section">
+      <h3>YOUR CHARACTER</h3>
+      <div class="creature-pick">${CREATURES.map((c) => `<button type="button" class="${c === mine ? 'mine' : ''}" ${taken.has(c) ? 'disabled' : ''} data-send='${JSON.stringify({ type: 'look', look: c })}' aria-label="${c}" title="${c}"><img src="${spriteUrl(c)}" alt=""></button>`).join('')}</div>
+      <h3 class="sub-h">HAT</h3>
+      <div class="creature-pick hats">${HATS.map((hat) => `<button type="button" class="${hat === (playerById(s.you)?.hat ?? 'none') ? 'mine' : ''}" data-send='${JSON.stringify({ type: 'hat', hat })}' aria-label="${hat}" title="${hat}">${hat === 'none' ? '<span class="nohat">✕</span>' : `<img src="${spriteUrl(`hat-${hat}`)}" alt="">`}</button>`).join('')}</div>
     </div>
     ${nightBoard()}
     ${!me.user && me.authEnabled ? '<p class="note">Sign in with Discord (top right) so your wins count on the global leaderboard.</p>' : ''}`;
@@ -517,6 +586,7 @@ renderSoundButtons();
 // ---- voice chat ----------------------------------------------------------------
 
 voice.setup({ sendFn: send, changed: () => renderVoiceBar() });
+sketchpad.setup(send);
 
 function renderVoiceBar() {
   const bar = $('voicebar');
@@ -545,8 +615,12 @@ $('voicebar').addEventListener('click', async (e) => {
 setInterval(() => { if (voice.inVoice()) renderVoiceBar(); }, 2000);
 
 let lastReact = 0;
-$('reactions').innerHTML = REACTIONS.map((r, i) => `<button type="button" data-react="${i}" aria-label="React ${r}">${r}</button>`).join('');
+$('reactions').innerHTML = REACTIONS.map((r, i) => `<button type="button" data-react="${i}" aria-label="React ${r}">${r}</button>`).join('')
+  + '<span class="sep"></span>'
+  + SOUNDS.map((snd, i) => `<button type="button" class="sound" data-react="${REACTIONS.length + i}" aria-label="${snd.label}" title="${snd.label}">${snd.icon}</button>`).join('')
+  + '<button type="button" class="disco-btn" data-disco aria-label="Disco mode" title="Disco mode!">🪩</button>';
 $('reactions').addEventListener('click', (e) => {
+  if (e.target.closest('[data-disco]')) return send({ type: 'disco' });
   const b = e.target.closest('[data-react]');
   if (!b || Date.now() - lastReact < 450) return;
   lastReact = Date.now();
@@ -556,6 +630,20 @@ $('reactions').addEventListener('click', (e) => {
 document.addEventListener('pointerdown', (e) => {
   if (e.target.closest('.btn:not(:disabled), button.card, .creature-pick button:not(:disabled), .pill')) sfx.click();
 });
+
+// ---- disco mode ----------------------------------------------------------------
+
+let discoTimer;
+function startDisco(name) {
+  const SECONDS = 8;
+  document.body.classList.add('disco');
+  clearTimeout(discoTimer);
+  discoTimer = setTimeout(() => document.body.classList.remove('disco'), SECONDS * 1000);
+  fx.banner('DISCO TIME!', { color: 'var(--pink)', big: true, sub: name ? `${name} dropped the ball` : '' });
+  sfx.disco(SECONDS);
+  fx.hostAnim('spin');
+  for (let i = 0; i < SECONDS; i++) setTimeout(() => fx.confetti(0.25), i * 1000);
+}
 
 // ---- timer + animation loop -------------------------------------------------------
 

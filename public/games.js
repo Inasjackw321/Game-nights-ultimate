@@ -2,6 +2,7 @@
 // the reef stage. Buttons use data-send='{json}' and forms data-form="type";
 // app.js turns those into WebSocket messages.
 import { spriteUrl } from './sprites.js';
+import * as sketchpad from './sketchpad.js';
 
 const send = (msg) => `data-send='${JSON.stringify(msg)}'`;
 const NEXT = (v, h, label = 'Next') => h.isHost
@@ -326,6 +327,35 @@ function tycoonPanel(v, h) {
     <p class="note">Land on an empty plot to claim it. Others pay you a toll when they land there. Land on your own plot to grow coral (bigger tolls), and own neighbouring plots for a <b>×1.5 reef network</b> bonus. Highest net worth (pearls + plots) after the last round wins.</p>`;
 }
 
+// ---- Reef Sketch ------------------------------------------------------------------------
+
+function sketchPanel(v, h) {
+  if (v.stage === 'choose') {
+    if (!v.choices) return `<p class="waiting">${h.esc(h.name(v.drawer))} is picking a word</p>`;
+    return `<p class="note center">Pick a word to draw. Don't write letters!</p>
+      <div class="options word-pick">${v.choices.map((w, i) => `<button class="btn ${['blue', 'pink', 'go'][i]}" ${send({ type: 'choose', index: i })}>${h.esc(w)}</button>`).join('')}</div>`;
+  }
+  const t = sketchpad.currentTool();
+  const tools = v.isDrawer && v.stage === 'draw' ? `<div class="sketch-tools">
+      <div class="swatches">${sketchpad.PALETTE.map((c, i) => `<button type="button" class="swatch ${t.c === i ? 'on' : ''}" style="--c:${c}" data-ink="color:${i}" aria-label="Colour ${i + 1}"></button>`).join('')}</div>
+      <div class="row wrap tool-row">${sketchpad.SIZES.map((w) => `<button type="button" class="btn small size ${t.w === w ? 'on' : ''}" data-ink="size:${w}"><i style="--s:${4 + w * 4}px"></i></button>`).join('')}
+        <button type="button" class="btn small ${t.c === 1 ? 'on' : ''}" data-ink="eraser">Eraser</button>
+        <button type="button" class="btn small" data-ink="undo">↶ Undo</button>
+        <button type="button" class="btn small danger" data-ink="clear">Clear</button></div>
+    </div>` : '';
+  const word = v.stage === 'reveal' || v.word
+    ? `<div class="sketch-word known">${h.esc(v.word ?? '')}</div>`
+    : `<div class="sketch-word">${h.esc(v.mask ?? '').replace(/ /g, '&nbsp;&nbsp;')} <span class="muted tiny">(${v.letters} letters)</span></div>`;
+  const chat = `<ul class="sketch-chat">${[...v.chat].reverse().map((c) => c.kind === 'correct'
+    ? `<li class="ok">✓ <b>${h.esc(c.who)}</b> guessed it! <span class="muted">+${c.pts}</span></li>`
+    : `<li><b>${h.esc(c.who)}</b> ${h.esc(c.text)}</li>`).join('') || '<li class="muted">Guesses show up here…</li>'}</ul>`;
+  const guess = v.stage === 'draw' && v.canPlay && !v.isDrawer && !(h.me in v.guessed)
+    ? `<form class="answer" data-form="answer" data-clear autocomplete="off"><input name="text" maxlength="40" placeholder="Type your guess" autofocus enterkeyhint="send" autocapitalize="off"><button class="btn primary">Guess</button></form>`
+    : '';
+  const after = v.stage === 'reveal' ? `${deltaBoard(v.deltas, h)}${NEXT(v, h, 'Next artist')}` : '';
+  return `${word}<div class="sketch-wrap"><canvas class="sketch ${v.isDrawer && v.stage === 'draw' ? 'can-draw' : ''}" width="800" height="600"></canvas></div>${tools}${guess}${chat}${after}`;
+}
+
 export const RENDERERS = {
   deepcut: { panel: (v, h) => promptPanel(v, h, { deep: true }) },
   hivemind: { panel: (v, h) => promptPanel(v, h, { deep: false }) },
@@ -338,6 +368,7 @@ export const RENDERERS = {
   derby: { panel: derbyPanel },
   // Keep one key for the whole game so the board is patched in place, never redrawn.
   tycoon: { panel: tycoonPanel, key: () => 'board' },
+  sketch: { panel: sketchPanel },
 };
 
-export const FRAMES = { derby: derbyFrame };
+export const FRAMES = { derby: derbyFrame, sketch: (v, panel) => sketchpad.mount(v, panel) };

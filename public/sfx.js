@@ -131,6 +131,36 @@ export const sfx = {
   },
   chomp: () => { tone(200, 0.06, { vol: 0.12, slide: 80 }); tone(180, 0.06, { vol: 0.12, slide: 70, delay: 0.1 }); },
   react: (i = 0) => tone([660, 784, 880, 988, 1175, 523][i % 6], 0.08, { type: 'triangle', vol: 0.1, slide: 1500 }),
+
+  // ---- soundboard ----
+  airhorn: () => {
+    for (const [t, d] of [[0, 0.18], [0.22, 0.18], [0.44, 0.7]]) {
+      for (const f of [415, 523, 622]) tone(f, d, { type: 'sawtooth', vol: 0.09, delay: t, attack: 0.01 });
+    }
+  },
+  rimshot: () => {
+    tone(180, 0.12, { type: 'sine', vol: 0.35, slide: 90 });
+    tone(140, 0.12, { type: 'sine', vol: 0.35, slide: 70, delay: 0.16 });
+    noise(0.6, { type: 'highpass', freq: 6000, vol: 0.25, delay: 0.34 });
+  },
+  applause: () => { for (let i = 0; i < 70; i++) noise(0.03, { freq: 1500 + Math.random() * 3000, q: 3, vol: 0.05 + Math.random() * 0.08, delay: Math.random() * 1.8 }); },
+  crickets: () => {
+    for (let c = 0; c < 3; c++) for (let i = 0; i < 4; i++) tone(4400, 0.025, { type: 'sine', vol: 0.06, delay: c * 0.7 + i * 0.05 });
+  },
+  sadTrombone: () => sfx.wah(),
+
+  // A few bars of four-on-the-floor for disco mode.
+  disco: (seconds = 8) => {
+    const beat = 60 / 124;
+    const notes = [523, 659, 784, 659, 587, 740, 880, 740];
+    for (let t = 0, i = 0; t < seconds; t += beat / 2, i++) {
+      if (i % 2 === 0) tone(65, 0.18, { type: 'sine', vol: 0.4, slide: 40, delay: t });
+      else noise(0.05, { type: 'highpass', freq: 8000, vol: 0.12, delay: t });
+      tone(notes[i % notes.length], beat / 2.2, { type: 'square', vol: 0.06, delay: t });
+      if (i % 4 === 2) tone(notes[(i + 3) % notes.length] / 2, beat, { type: 'sawtooth', vol: 0.05, delay: t });
+    }
+  },
+  poke: (n = 0) => tone(300 + n * 70, 0.09, { type: 'square', vol: 0.12, slide: 120 + n * 30 }),
 };
 
 // ---- a tiny bubbly music loop (off by default) ---------------------------------

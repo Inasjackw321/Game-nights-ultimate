@@ -304,6 +304,29 @@ const HANDLERS = {
     }
   },
 
+  sketch({ a, b, me, idOf, stageChanged }) {
+    if (stageChanged && b.stage === 'choose') { newRound(b); if (b.drawer !== me) fx.seatAnim(b.drawer, 'spin'); return; }
+    if (stageChanged && b.stage === 'draw') {
+      sfx.start();
+      fx.banner(b.isDrawer ? 'DRAW!' : 'GUESS!', { color: b.isDrawer ? 'var(--pink)' : 'var(--green)', sub: b.isDrawer ? b.word : `${b.letters} letters` });
+      return;
+    }
+    // New correct guesses (they're never shown as text, just celebrated).
+    const seen = new Set((a.chat ?? []).filter((c) => c.kind === 'correct').map((c) => c.pid));
+    for (const c of (b.chat ?? []).filter((x) => x.kind === 'correct' && !seen.has(x.pid))) {
+      sfx.ding();
+      fx.seatAnim(c.pid, 'spin');
+      popScore(c.pid, `+${c.pts}`, 'var(--yellow)');
+      if (c.pid === me) { fx.confetti(0.6); fx.banner('YOU GOT IT!', { color: 'var(--green)', sub: `+${c.pts}` }); }
+    }
+    if (stageChanged && b.stage === 'reveal') {
+      const n = Object.keys(b.guessed ?? {}).length;
+      fx.banner(`“${(b.word ?? '').toUpperCase()}”`, { sub: n ? `${n} got it!` : 'Nobody got it…' });
+      if (n) { sfx.fanfare(); popScore(b.drawer, `+${b.deltas?.[b.drawer] ?? 0}`, 'var(--pink)'); fx.seatAnim(b.drawer, 'hop'); }
+      else { sfx.wah(); fx.seatAnim(b.drawer, 'squash'); }
+    }
+  },
+
   derby({ b, me, stageChanged }) {
     if (!stageChanged) return;
     if (b.stage === 'bet') return newRound(b);

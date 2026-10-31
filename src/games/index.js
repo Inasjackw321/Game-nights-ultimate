@@ -8,8 +8,9 @@ import blackjack from './blackjack.js';
 import dice from './dice.js';
 import derby from './derby.js';
 import tycoon from './tycoon.js';
+import sketch from './sketch.js';
 
-export const GAMES = [deepcut, hivemind, fib, blitz, likely, whoami, tycoon, blackjack, dice, derby];
+export const GAMES = [deepcut, hivemind, sketch, fib, blitz, likely, whoami, tycoon, blackjack, dice, derby];
 export const GAME_BY_ID = Object.fromEntries(GAMES.map((g) => [g.meta.id, g]));
 export const CATALOG = GAMES.map((g) => g.meta);
 
